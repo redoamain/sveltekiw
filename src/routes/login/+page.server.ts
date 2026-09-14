@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 export const load: PageServerLoad = async ({ cookies, url }) => {
 	const existing = cookies.get(AUTH_COOKIE);
 	if (existing && decodeSession(existing)) {
-		const next = url.searchParams.get('next') || '/dashboard/ppic';
+		const next = url.searchParams.get('next') || '/dashboard';
 		throw redirect(303, next);
 	}
 
@@ -23,7 +23,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		error = 'Sesi Anda telah berakhir — akun login di perangkat lain. Silakan login kembali.';
 	}
 
-	const nextParam = url.searchParams.get('next') ?? '/dashboard/ppic';
+	const nextParam = url.searchParams.get('next') ?? '/dashboard';
 	return {
 		error,
 		nextParam
@@ -31,11 +31,11 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 };
 
 export const actions: Actions = {
-	default: async ({ request, cookies, getClientAddress }) => {
+	default: async ({ request, cookies, url, getClientAddress }) => {
 		const fd = await request.formData();
 		const username = String(fd.get('username') ?? '').trim();
 		const password = String(fd.get('password') ?? '').trim();
-		const next = String(fd.get('next') ?? '/dashboard/ppic');
+		const next = String(fd.get('next') ?? '/dashboard');
 		const dbSourceRaw = String(fd.get('db_source') ?? 'live');
 		const useBackup = dbSourceRaw === 'backup';
 
@@ -59,10 +59,18 @@ export const actions: Actions = {
 			const sid = randomUUID();
 			const token = encodeSession(user, sid);
 
-			cookies.set(AUTH_COOKIE, token, authCookieOptions());
+			const isHttps =
+				url.protocol === 'https:' ||
+				request.headers.get('x-forwarded-proto') === 'https';
+			const secure =
+				process.env.COOKIE_SECURE !== undefined
+					? process.env.COOKIE_SECURE === 'true'
+					: isHttps;
+
+			cookies.set(AUTH_COOKIE, token, authCookieOptions(secure));
 			cookies.set(DB_SOURCE_COOKIE, useBackup ? 'backup' : 'live', {
 				httpOnly: true,
-				secure: process.env.NODE_ENV === 'production',
+				secure,
 				sameSite: 'lax',
 				path: '/',
 				maxAge: 60 * 60 * 8

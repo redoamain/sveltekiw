@@ -79,7 +79,12 @@
 					action="/login"
 					use:enhance={() => {
 						loading = true;
-						return async ({ update }) => {
+						return async ({ result, update }) => {
+							if (result.type === 'redirect') {
+								// Navigasi penuh browser agar sesi, cookie, dan state dashboard terinisialisasi bersih
+								window.location.href = result.location;
+								return;
+							}
 							loading = false;
 							await update();
 						};

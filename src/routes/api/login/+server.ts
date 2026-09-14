@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { logUserActivity } from "$lib/server/access-log";
 
 // POST /api/login — dipakai oleh form login Astro & kompatibel dengan kiw (fetch JSON)
-export const POST: RequestHandler = async ({ request, cookies }) => {
+export const POST: RequestHandler = async ({ request, cookies, url }) => {
   let username = "";
   let password = "";
   let dbSource: "live" | "backup" = "live";
@@ -57,10 +57,19 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
     const sid = randomUUID();
     const token = encodeSession(user, sid);
-    cookies.set(AUTH_COOKIE, token, authCookieOptions());
+
+    const isHttps =
+      url.protocol === "https:" ||
+      request.headers.get("x-forwarded-proto") === "https";
+    const secure =
+      process.env.COOKIE_SECURE !== undefined
+        ? process.env.COOKIE_SECURE === "true"
+        : isHttps;
+
+    cookies.set(AUTH_COOKIE, token, authCookieOptions(secure));
     cookies.set(DB_SOURCE_COOKIE, dbSource, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure,
       sameSite: "lax" as const,
       path: "/",
       maxAge: 60 * 60 * 8,

@@ -80,11 +80,15 @@ export function getUserFromCookie(cookieValue: string | undefined): AuthUser | n
   return decodeSession(cookieValue);
 }
 
-// Type helper untuk Astro middleware / API
-export function authCookieOptions(maxAge = AUTH_MAX_AGE) {
+// Type helper untuk auth cookie
+export function authCookieOptions(secure?: boolean, maxAge = AUTH_MAX_AGE) {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure:
+      secure ??
+      (process.env.COOKIE_SECURE !== undefined
+        ? process.env.COOKIE_SECURE === "true"
+        : process.env.NODE_ENV === "production"),
     sameSite: "lax" as const,
     path: "/",
     maxAge,

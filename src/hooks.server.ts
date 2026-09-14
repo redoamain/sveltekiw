@@ -64,14 +64,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 		return dbContext.run({ useBackup }, () => resolve(event));
 	}
 
-	// Halaman public -> jika sudah login dan buka /login, redirect ke /dashboard/ppic
+	// Halaman public -> jika sudah login dan buka /login, redirect ke /dashboard
 	if (isPublic(pathname)) {
 		if (pathname === '/login' || pathname === '/auth/login') {
 			const token = event.cookies.get(AUTH_COOKIE);
 			if (token) {
 				const user = decodeSession(token);
 				if (user) {
-					throw redirect(303, '/dashboard/ppic');
+					throw redirect(303, '/dashboard');
 				}
 			}
 		}
