@@ -1,0 +1,272 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/forms";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* NEO-BRUTALISM — chunky, high-contrast, hard shadows */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700;800&family=JetBrains+Mono:wght@700;800&family=DM+Sans:wght@600;700;800&display=swap');
+
+@theme {
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: "DM Sans", system-ui, sans-serif;
+
+  @keyframes accordion-down {
+    from { height: 0; }
+    to { height: var(--starwind-accordion-content-height); }
+  }
+  @keyframes accordion-up {
+    from { height: var(--starwind-accordion-content-height); }
+    to { height: 0; }
+  }
+}
+
+/* Design tokens — mapped to Tailwind via @theme inline */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-accent: var(--primary-accent);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-accent: var(--secondary-accent);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-outline: var(--outline);
+
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.25rem;
+
+  --color-sidebar: var(--sidebar-background);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-outline: var(--sidebar-outline);
+}
+
+/* ——— Neo-Brutalism palette ———
+   Cool paper background, brutal blue primary, pitch-black borders,
+   hard offset shadows, extra-bold type.
+*/
+:root {
+  --background: #EFF6FF;
+  --foreground: #0F0F0F;
+  --card: #FFFFFF;
+  --card-foreground: #0F0F0F;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F0F0F;
+  --primary: #2563EB;
+  --primary-foreground: #FFFFFF;
+  --primary-accent: #1D4ED8;
+  --secondary: #0F0F0F;
+  --secondary-foreground: #EFF6FF;
+  --secondary-accent: #1A1A1A;
+  --muted: #DBEAFE;
+  --muted-foreground: #4A5568;
+  --accent: #FF4D5A;
+  --accent-foreground: #FFFFFF;
+  --info: #00D1FF;
+  --info-foreground: #0F0F0F;
+  --success: #00E676;
+  --success-foreground: #0F0F0F;
+  --warning: #FF9100;
+  --warning-foreground: #0F0F0F;
+  --error: #FF3B30;
+  --error-foreground: #FFFFFF;
+  --border: #0F0F0F;
+  --input: #0F0F0F;
+  --outline: #2563EB;
+  --radius: 0.75rem;
+
+  /* sidebar — pitch black with brutal blue accent */
+  --sidebar-background: #0F0F0F;
+  --sidebar-foreground: #EFF6FF;
+  --sidebar-primary: #2563EB;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1E1E1E;
+  --sidebar-accent-foreground: #EFF6FF;
+  --sidebar-border: #2A2A2A;
+  --sidebar-outline: #2563EB;
+}
+
+.dark {
+  --background: #0F0F0F;
+  --foreground: #EFF6FF;
+  --card: #1A1A1A;
+  --card-foreground: #EFF6FF;
+  --popover: #1A1A1A;
+  --popover-foreground: #EFF6FF;
+  --primary: #3B82F6;
+  --primary-foreground: #FFFFFF;
+  --primary-accent: #2563EB;
+  --secondary: #EFF6FF;
+  --secondary-foreground: #0F0F0F;
+  --secondary-accent: #DBEAFE;
+  --muted: #1E293B;
+  --muted-foreground: #94A3B8;
+  --accent: #FF4D5A;
+  --accent-foreground: #FFFFFF;
+  --info: #00D1FF;
+  --info-foreground: #0F0F0F;
+  --success: #00E676;
+  --success-foreground: #0F0F0F;
+  --warning: #FF9100;
+  --warning-foreground: #0F0F0F;
+  --error: #FF3B30;
+  --error-foreground: #FFFFFF;
+  --border: #2A2A2A;
+  --input: #3A3A3A;
+  --outline: #3B82F6;
+  --sidebar-background: #0A0A0A;
+  --sidebar-foreground: #EFF6FF;
+  --sidebar-primary: #3B82F6;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1E293B;
+  --sidebar-accent-foreground: #EFF6FF;
+  --sidebar-border: #1E293B;
+  --sidebar-outline: #3B82F6;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-outline/50;
+  }
+  html {
+    scrollbar-gutter: stable;
+  }
+  body {
+    @apply bg-background text-foreground scheme-light dark:scheme-dark;
+    font-family: var(--font-sans);
+    font-weight: 600;
+  }
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  button {
+    @apply cursor-pointer;
+    font-family: var(--font-display);
+    font-weight: 800;
+  }
+}
+
+/* Neo-brutalism utilities — hard shadows & thick borders */
+@layer utilities {
+  .brutal-shadow {
+    box-shadow: 5px 5px 0 0 var(--color-border);
+  }
+  .brutal-shadow-sm {
+    box-shadow: 3px 3px 0 0 var(--color-border);
+  }
+  .brutal-shadow-lg {
+    box-shadow: 8px 8px 0 0 var(--color-border);
+  }
+  .brutal-border {
+    border-width: 3px;
+    border-color: var(--color-border);
+  }
+  .brutal-card {
+    border-width: 3px;
+    border-color: var(--color-border);
+    box-shadow: 6px 6px 0 0 var(--color-border);
+    border-radius: var(--radius-lg);
+  }
+  .brutal-input {
+    border-width: 3px;
+    border-color: var(--color-border);
+    box-shadow: 3px 3px 0 0 var(--color-border);
+    font-weight: 700;
+  }
+  .brutal-badge {
+    border-width: 2px;
+    border-color: var(--color-border);
+    box-shadow: 2px 2px 0 0 var(--color-border);
+    font-family: var(--font-mono);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+}
+
+/* Subtle grain texture for neo-brutalism */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  z-index: -1;
+}
+
+/* Auto-brutalize Starwind primitives — keep brutal everywhere */
+@layer base {
+  [data-slot="card"] {
+    border-width: 3px !important;
+    box-shadow: 6px 6px 0 0 var(--color-border) !important;
+  }
+  [data-slot="input"] {
+    border-width: 3px !important;
+    box-shadow: 3px 3px 0 0 var(--color-border) !important;
+    font-weight: 700 !important;
+  }
+  [data-slot="badge"] {
+    border-width: 2px !important;
+    box-shadow: 2px 2px 0 0 var(--color-border) !important;
+    font-family: var(--font-mono) !important;
+    font-weight: 800 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  [data-slot="table"] {
+    border-width: 3px !important;
+    border-color: var(--color-border) !important;
+    box-shadow: 6px 6px 0 0 var(--color-border) !important;
+    border-radius: var(--radius-lg) !important;
+    overflow: hidden;
+  }
+  [data-slot="button"]:not([data-slot="sidebar"] *) {
+    border-width: 3px !important;
+    box-shadow: 4px 4px 0 0 var(--color-border) !important;
+    font-weight: 800 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  [data-slot="button"]:not([data-slot="sidebar"] *):active {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 0 var(--color-border) !important;
+  }
+  [data-slot="alert"] {
+    border-width: 3px !important;
+    box-shadow: 4px 4px 0 0 var(--color-border) !important;
+    font-weight: 700;
+  }
+}
