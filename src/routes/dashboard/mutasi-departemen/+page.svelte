@@ -14,7 +14,8 @@
 	} from '@lucide/svelte';
 
 	const KIW_SHEET_HOST = '192.168.1.215';
-	const gristUrl = `http://${KIW_SHEET_HOST}:8484/o/citiplumb/doc/pnPY9D1FA4hsBGaBtdbVz2`;
+	const KIW_SHEET_URL = 'https://kws.citiplumb.id';
+	const gristUrl = `${KIW_SHEET_URL}/o/citiplumb/doc/pnPY9D1FA4hsBGaBtdbVz2`;
 	let iframeEl = $state<HTMLIFrameElement | null>(null);
 	let isFullscreen = $state(false);
 	let selectedDept = $state('ALL');
