@@ -49,8 +49,8 @@
 <div class="space-y-5">
 	<!-- Page Header Neo-Brutal -->
 	<PageHeader
-		title="Mutasi Antar Departemen (Live kiw-excel)"
-		description="Sistem Serah-Terima 2 Arah (Two-Way Handshake), Verifikasi Grade A/B/C, dan Saldo Stok Realtime Terintegrasi."
+		title="kiw-sheet"
+		description="Mutasi Antar Departemen — Sistem Serah-Terima 2 Arah (Two-Way Handshake), Verifikasi Grade A/B/C, dan Saldo Stok Realtime Terintegrasi."
 	>
 		{#snippet actions()}
 			<div class="flex flex-wrap items-center gap-2">
@@ -164,7 +164,7 @@
 			<iframe
 				bind:this={iframeEl}
 				src={gristUrl}
-				title="Dokumen Mutasi & Stok Antar Departemen (Grist kiw-excel)"
+				title="Dokumen Mutasi & Stok Antar Departemen (kiw-sheet)"
 				class="w-full h-full border-0 bg-slate-50"
 				allow="clipboard-read; clipboard-write"
 			></iframe>

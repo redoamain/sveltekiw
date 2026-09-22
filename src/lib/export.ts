@@ -686,13 +686,14 @@ export async function exportPlanToExcel(
 // ==================== MASTER BARANG EXPORT ====================
 export async function exportMasterGoodsToExcel(
   rows: MasterItem[],
-  opts?: { q?: string },
+  opts?: { q?: string; selectedCount?: number },
 ): Promise<{ buffer: Buffer; fileName: string }> {
   const today = new Date().toISOString().split("T")[0];
   const safeQ = (opts?.q ?? "").trim().replace(/[\\/*?:"<>|]/g, "").replace(/\s+/g, "_").slice(0, 20);
+  const sel = opts?.selectedCount ? `_pilih${opts.selectedCount}` : "";
   const fileName = safeQ
-    ? `Master_Barang_${safeQ}_${today}.xlsx`
-    : `Master_Barang_semua_${today}.xlsx`;
+    ? `Master_Barang_${safeQ}${sel}_${today}.xlsx`
+    : `Master_Barang_${sel ? `pilih${opts?.selectedCount}` : "semua"}_${today}.xlsx`;
 
   const wb = XLSX.utils.book_new();
 
@@ -714,7 +715,7 @@ export async function exportMasterGoodsToExcel(
   const wsData: (string | number)[][] = [
     [`MASTER BARANG — KIW Monitoring Inventori`],
     [`Tanggal Export: ${new Date().toLocaleDateString("id-ID")} ${new Date().toLocaleTimeString("id-ID")}`],
-    [`Filter: ${opts?.q ? `pencarian "${opts.q}"` : "semua barang (taGoods × taKindofGoods)"}`],
+    [`Filter: ${opts?.q ? `pencarian "${opts.q}"` : "semua barang (taGoods × taKindofGoods)"}${opts?.selectedCount ? ` | Dipilih ${opts.selectedCount} item` : ""}`],
     [`Total: ${rows.length.toLocaleString("id-ID")} item`],
     [],
     headers,

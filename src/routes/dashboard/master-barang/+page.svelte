@@ -16,12 +16,13 @@
 		TableCell,
 		LoadingOverlay
 	} from '$lib/components';
-	import { Package, Search, X } from '@lucide/svelte';
+	import { Package, Search, X, Download } from '@lucide/svelte';
 
 	let { data } = $props();
 
 	let loading = $state(false);
 	let loadingMsg = $state('Memuat...');
+	let selected = $state<string[]>([]);
 
 	// Reset loading ketika data halaman selesai diperbarui oleh SvelteKit
 	$effect(() => {
@@ -29,6 +30,32 @@
 			loading = false;
 		}
 	});
+
+	let allSelected = $derived(
+		data.rows.length > 0 && data.rows.every((r) => selected.includes(String(r.ItemID)))
+	);
+
+	function toggleSelectAll() {
+		if (allSelected) {
+			const pageIds = new Set(data.rows.map((r) => String(r.ItemID)));
+			selected = selected.filter((id) => !pageIds.has(id));
+		} else {
+			const pageIds = data.rows.map((r) => String(r.ItemID));
+			selected = Array.from(new Set([...selected, ...pageIds]));
+		}
+	}
+
+	function toggleSelect(id: string) {
+		if (selected.includes(id)) {
+			selected = selected.filter((s) => s !== id);
+		} else {
+			selected = [...selected, id];
+		}
+	}
+
+	function clearSelection() {
+		selected = [];
+	}
 </script>
 
 <LoadingOverlay show={loading} message={loadingMsg} submessage="Mohon tunggu" />
@@ -42,32 +69,6 @@
 			<Badge variant="secondary" class="border-[3px] font-mono font-black">
 				{data.total.toLocaleString('id-ID')} ITEM
 			</Badge>
-			<form
-				method="post"
-				action="/api/master/export"
-				onsubmit={() => {
-					loading = true;
-					loadingMsg = 'Menyiapkan Excel...';
-					setTimeout(() => (loading = false), 3000);
-				}}
-				class="inline-flex"
-			>
-				<input type="hidden" name="q" value={data.q} />
-				<Button
-					type="submit"
-					variant="secondary"
-					class="h-9 border-[3px] font-black uppercase tracking-wide brutal-shadow-sm text-xs cursor-pointer"
-				>
-					Export Excel
-				</Button>
-			</form>
-			<a
-				href={`/api/master/export${data.q ? `?q=${encodeURIComponent(data.q)}` : ''}`}
-				class="hidden md:inline-flex h-9 items-center border-[3px] border-border bg-card rounded-lg px-3 text-xs font-black uppercase tracking-wide brutal-shadow-sm hover:bg-muted"
-				title="Download via API (GET)"
-			>
-				API
-			</a>
 		{/snippet}
 	</PageHeader>
 
@@ -169,19 +170,77 @@
 
 	<!-- Brutal table wrapper -->
 	<div class="bg-card overflow-hidden rounded-xl border-[3px] border-border brutal-shadow">
-		<div class="bg-muted/40 border-b-[3px] border-border flex items-center justify-between px-4 py-3">
-			<h3 class="font-black uppercase tracking-tight" style="font-family: var(--font-display)">
-				Daftar Barang
-			</h3>
-			<span class="bg-card border-border rounded-full border-2 px-3 py-1 font-mono text-[10px] font-black uppercase">
-				{data.total.toLocaleString('id-ID')} total • hal {data.page}
-			</span>
+		<div class="bg-muted/40 border-b-[3px] border-border flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+			<div class="flex items-center gap-3">
+				<h3 class="font-black uppercase tracking-tight" style="font-family: var(--font-display)">
+					Daftar Barang
+				</h3>
+				{#if selected.length > 0}
+					<Badge variant="primary" class="border-2 font-mono">
+						{selected.length} DIPILIH
+					</Badge>
+					<button
+						type="button"
+						onclick={clearSelection}
+						class="text-[11px] font-mono font-bold underline text-muted-foreground hover:text-foreground cursor-pointer"
+					>
+						Batal Pilih
+					</button>
+				{/if}
+			</div>
+			<div class="flex items-center gap-2">
+				<span class="bg-card border-border rounded-full border-2 px-3 py-1 font-mono text-[10px] font-black uppercase">
+					{data.total.toLocaleString('id-ID')} total • hal {data.page}
+				</span>
+				<form
+					method="post"
+					action="/api/master/export"
+					onsubmit={() => {
+						loading = true;
+						loadingMsg = 'Menyiapkan Excel...';
+						setTimeout(() => (loading = false), 3000);
+					}}
+					class="inline-flex"
+				>
+					<input type="hidden" name="q" value={data.q} />
+					{#each selected as id}
+						<input type="hidden" name="selected" value={id} />
+					{/each}
+					<Button
+						type="submit"
+						variant="secondary"
+						class="h-8 border-2 font-black uppercase tracking-wide brutal-shadow-sm text-xs cursor-pointer"
+					>
+						<Download class="size-3.5 mr-1" />
+						Export {selected.length > 0 ? `(${selected.length})` : 'Excel'}
+					</Button>
+				</form>
+				<a
+					href={`/api/master/export?${new URLSearchParams({
+						...(data.q ? { q: data.q } : {}),
+						...(selected.length > 0 ? { ids: selected.join(',') } : {})
+					}).toString()}`}
+					class="hidden md:inline-flex h-8 items-center border-2 border-border bg-card rounded-lg px-2.5 text-xs font-black uppercase tracking-wide brutal-shadow-sm hover:bg-muted"
+					title="Download via API (GET)"
+				>
+					API
+				</a>
+			</div>
 		</div>
 
 		<div class="overflow-x-auto">
 			<Table wrapperClass="border-0 shadow-none rounded-none">
 				<TableHeader>
 					<TableRow class="bg-muted/50">
+						<TableHead class="w-10 text-center">
+							<input
+								type="checkbox"
+								checked={allSelected}
+								onchange={toggleSelectAll}
+								class="size-4 rounded border-2 border-border text-primary focus:ring-0 cursor-pointer"
+								title="Pilih semua di halaman ini"
+							/>
+						</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Kode</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Nama</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">NamaBC</TableHead>
@@ -195,7 +254,7 @@
 				<TableBody>
 					{#if data.rows.length === 0}
 						<TableRow>
-							<TableCell colspan={8} class="h-24 text-center">
+							<TableCell colspan={9} class="h-24 text-center">
 								<div class="flex flex-col items-center gap-2 py-4">
 									<div class="bg-muted border-border flex size-12 items-center justify-center rounded-xl border-[3px] brutal-shadow-sm">
 										<Package class="size-6" />
@@ -208,7 +267,16 @@
 						</TableRow>
 					{:else}
 						{#each data.rows as r}
-							<TableRow class="hover:bg-primary/5">
+							{@const isChecked = selected.includes(String(r.ItemID))}
+							<TableRow class="hover:bg-primary/5 {isChecked ? 'bg-primary/10' : ''}">
+								<TableCell class="text-center">
+									<input
+										type="checkbox"
+										checked={isChecked}
+										onchange={() => toggleSelect(String(r.ItemID))}
+										class="size-4 rounded border-2 border-border text-primary focus:ring-0 cursor-pointer"
+									/>
+								</TableCell>
 								<TableCell>
 									<a
 										href={`/dashboard/master-barang?id=${encodeURIComponent(r.ItemID)}${data.q ? `&q=${encodeURIComponent(data.q)}` : ''}`}
