@@ -20,7 +20,8 @@
 		Menu,
 		X,
 		ShoppingCart,
-		UserCheck
+		UserCheck,
+		FileSpreadsheet
 	} from '@lucide/svelte';
 
 	let { data, children } = $props();
@@ -56,6 +57,7 @@
 		{
 			label: 'Gudang',
 			items: [
+				{ href: '/dashboard/mutasi-departemen', label: 'Mutasi Antar Dept (Live)', icon: FileSpreadsheet },
 				{ href: '/dashboard/lbm', label: 'LBM', icon: ArrowDownToLine },
 				{ href: '/dashboard/lbk', label: 'LBK', icon: ArrowUpFromLine },
 				{ href: '/dashboard/retur-produksi', label: 'Retur Produksi', icon: RotateCcw },
