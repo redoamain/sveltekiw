@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { PageHeader, Badge, Button } from '$lib/components';
 	import {
 		FileSpreadsheet,
@@ -14,18 +13,11 @@
 		Sparkles
 	} from '@lucide/svelte';
 
-	// Dynamic host determination for LAN / Localhost
-	let currentHost = $state('localhost');
-	let gristUrl = $derived(`http://${currentHost}:8484/o/citiplumb/doc/pnPY9D1FA4hsBGaBtdbVz2`);
+	const KIW_SHEET_HOST = '192.168.1.215';
+	const gristUrl = `http://${KIW_SHEET_HOST}:8484/o/citiplumb/doc/pnPY9D1FA4hsBGaBtdbVz2`;
 	let iframeEl = $state<HTMLIFrameElement | null>(null);
 	let isFullscreen = $state(false);
 	let selectedDept = $state('ALL');
-
-	onMount(() => {
-		if (typeof window !== 'undefined' && window.location.hostname) {
-			currentHost = window.location.hostname;
-		}
-	});
 
 	function refreshFrame() {
 		if (iframeEl) {
@@ -42,7 +34,7 @@
 	}
 
 	function downloadDept(dept: string) {
-		window.location.href = `http://${currentHost}:8485/api/export-dept?dept=${dept}`;
+		window.location.href = `http://${KIW_SHEET_HOST}:8485/api/export-dept?dept=${dept}`;
 	}
 </script>
 
@@ -168,17 +160,6 @@
 				class="w-full h-full border-0 bg-slate-50"
 				allow="clipboard-read; clipboard-write"
 			></iframe>
-		</div>
-	</div>
-
-	<!-- Bottom Help & Network Info -->
-	<div class="p-3 bg-slate-100 rounded-xl border-2 border-slate-300 text-xs text-slate-600 flex flex-wrap justify-between items-center gap-2">
-		<div>
-			💡 <b>Akses dari PC Lapangan (LAN):</b> Rekan kerja di departemen lain dapat membuka sistem ini melalui IP pabrik: 
-			<code class="bg-white px-1.5 py-0.5 rounded border border-slate-300 font-mono text-blue-700">http://192.168.12.101:8484</code>
-		</div>
-		<div class="text-slate-500">
-			Dokumen ID: <code class="font-mono font-semibold text-slate-700">pnPY9D1FA4hsBGaBtdbVz2</code>
 		</div>
 	</div>
 </div>
