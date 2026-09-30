@@ -13,8 +13,10 @@
 		TableHead,
 		TableBody,
 		TableCell,
-		LoadingOverlay
+		LoadingOverlay,
+		Alert
 	} from '$lib/components';
+	import { toast } from '$lib/toast.svelte';
 	import {
 		Search,
 		Download,
@@ -94,6 +96,38 @@
 	}
 
 	const fmt = (n: number | null | undefined) => (Number(n) || 0).toLocaleString('id-ID');
+
+	function computeStockSummary(items: any[] | undefined) {
+		if (!items || items.length === 0) {
+			return { totalMasuk: 0, totalKeluar: 0, saldoAwal: 0, saldoAkhir: 0, count: 0 };
+		}
+		let totalMasuk = 0;
+		let totalKeluar = 0;
+		let saldoAwal = 0;
+		let count = 0;
+
+		for (const it of items) {
+			const isAwal = (it.Kegiatan || '').trim().toUpperCase() === 'S';
+			const kgi = Number(it.KgI) || 0;
+			const kgo = Number(it.KgO) || 0;
+			if (isAwal) {
+				saldoAwal += kgi;
+			} else {
+				totalMasuk += kgi;
+				totalKeluar += kgo;
+				count++;
+			}
+		}
+		const lastRow = items[items.length - 1];
+		const saldoAkhir = lastRow ? Number(lastRow.SaldoKg) || (saldoAwal + totalMasuk - totalKeluar) : 0;
+		return {
+			totalMasuk: Math.round(totalMasuk * 100) / 100,
+			totalKeluar: Math.round(totalKeluar * 100) / 100,
+			saldoAwal: Math.round(saldoAwal * 100) / 100,
+			saldoAkhir: Math.round(saldoAkhir * 100) / 100,
+			count
+		};
+	}
 </script>
 
 <LoadingOverlay show={loading} message={loadingMsg} submessage="Mohon tunggu" />
@@ -232,6 +266,7 @@
 						if (form) {
 							loading = true;
 							loadingMsg = 'Menyiapkan file Excel...';
+							toast.info('Export Excel', 'Mengekspor data monitoring pembelian...');
 							form.submit();
 							setTimeout(() => (loading = false), 2500);
 						}
@@ -254,15 +289,9 @@
 	</form>
 
 	{#if data.error}
-		<div
-			class="bg-error text-error-foreground flex items-center gap-2 rounded-xl border-[3px] border-border px-4 py-3 text-sm font-black uppercase tracking-wide brutal-shadow"
-			role="alert"
-		>
-			<span class="bg-card text-error flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border text-xs font-black">
-				!
-			</span>
-			<span>{data.error}</span>
-		</div>
+		<Alert variant="error" title="Terjadi Kesalahan" dismissible>
+			{data.error}
+		</Alert>
 	{/if}
 
 	<!-- Daftar PO Accordion Cards -->
@@ -444,17 +473,30 @@
 																			</TableHeader>
 																			<TableBody>
 																				{#each stockData[stockKey] as st}
-																					<TableRow class="hover:bg-primary/5">
+																					{@const isAwal = (st.Kegiatan || '').trim().toUpperCase() === 'S'}
+																					<TableRow class="hover:bg-primary/5 {isAwal ? 'bg-muted/40 font-bold' : ''}">
 																						<TableCell class="font-mono text-xs">{st.MoveDate || '-'}</TableCell>
 																						<TableCell class="font-mono text-xs">{st.LocName}</TableCell>
 																						<TableCell>
-																							<Badge variant="secondary" class="font-mono text-[10px]">{st.Kegiatan}</Badge>
+																							{#if isAwal}
+																								<Badge variant="outline" class="font-mono text-[10px] font-black border-primary text-primary bg-primary/10">
+																									SALDO AWAL (S)
+																								</Badge>
+																							{:else}
+																								<Badge variant="secondary" class="font-mono text-[10px]">{st.Kegiatan}</Badge>
+																							{/if}
 																						</TableCell>
-																						<TableCell class="font-mono text-xs text-right font-bold text-success">
-																							{st.KgI > 0 ? fmt(st.KgI) : '-'}
+																						<TableCell class="font-mono text-xs text-right font-bold {isAwal ? 'text-primary' : 'text-success'}">
+																							{#if isAwal}
+																								{fmt(st.KgI)}
+																							{:else if st.KgI > 0}
+																								+{fmt(st.KgI)}
+																							{:else}
+																								-
+																							{/if}
 																						</TableCell>
 																						<TableCell class="font-mono text-xs text-right font-bold text-error">
-																							{st.KgO > 0 ? fmt(st.KgO) : '-'}
+																							{st.KgO > 0 ? `-${fmt(st.KgO)}` : '-'}
 																						</TableCell>
 																						<TableCell class="font-mono text-xs text-right font-black">
 																							{fmt(st.SaldoKg)}
@@ -464,6 +506,27 @@
 																						</TableCell>
 																					</TableRow>
 																				{/each}
+
+																				{#if stockData[stockKey].length > 0}
+																					{@const summary = computeStockSummary(stockData[stockKey])}
+																					<TableRow class="bg-muted/90 border-t-2 border-border font-black text-foreground hover:bg-muted">
+																						<TableCell colspan={3} class="font-mono text-[10px] font-black uppercase text-right">
+																							TOTAL MUTASI ({summary.count}):
+																						</TableCell>
+																						<TableCell class="font-mono text-xs text-right font-black text-success">
+																							+{fmt(summary.totalMasuk)}
+																						</TableCell>
+																						<TableCell class="font-mono text-xs text-right font-black text-error">
+																							-{fmt(summary.totalKeluar)}
+																						</TableCell>
+																						<TableCell class="font-mono text-xs text-right font-black text-foreground bg-primary/10 border-x border-border">
+																							{fmt(summary.saldoAkhir)}
+																						</TableCell>
+																						<TableCell class="font-mono text-[10px] text-muted-foreground font-bold">
+																							Netto: {summary.totalMasuk - summary.totalKeluar >= 0 ? '+' : ''}{fmt(summary.totalMasuk - summary.totalKeluar)} Kg
+																						</TableCell>
+																					</TableRow>
+																				{/if}
 																			</TableBody>
 																		</Table>
 																	</div>

@@ -6,6 +6,7 @@ export const GET: RequestHandler = async ({ url }) => {
   const tgl1 = url.searchParams.get("tgl1")?.trim();
   const tgl2 = url.searchParams.get("tgl2")?.trim();
   const itemid = url.searchParams.get("itemid")?.trim();
+  const loc = url.searchParams.get("loc")?.trim() || "%";
 
   if (!tgl1 || !tgl2 || !itemid) {
     return new Response(
@@ -18,7 +19,7 @@ export const GET: RequestHandler = async ({ url }) => {
   }
 
   try {
-    const data = await getKartuStock({ tgl1, tgl2, itemid });
+    const data = await getKartuStock({ tgl1, tgl2, itemid, loc });
     return new Response(JSON.stringify(data), {
       status: 200,
       headers: { "Content-Type": "application/json" },

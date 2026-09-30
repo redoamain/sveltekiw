@@ -388,12 +388,13 @@ export async function getKartuStock(opts: {
   tgl1: string;
   tgl2: string;
   itemid: string;
+  loc?: string;
 }): Promise<KartuStockItem[]> {
-  const { tgl1, tgl2, itemid } = opts;
+  const { tgl1, tgl2, itemid, loc } = opts;
   const res = await runProcedure("dbo.rpKartuStockBrgL", [
     { name: "Tgl1", type: sql.Date, value: tgl1 },
     { name: "Tgl2", type: sql.Date, value: tgl2 },
-    { name: "Loc", type: sql.NVarChar, value: "%" },
+    { name: "Loc", type: sql.NVarChar, value: loc || "%" },
     { name: "Item", type: sql.NVarChar, value: "%" },
     { name: "PeriodeR", type: sql.NVarChar, value: "201905" },
     { name: "kategori", type: sql.NVarChar, value: "0" },
