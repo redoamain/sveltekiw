@@ -12,9 +12,11 @@
 		TableHead,
 		TableBody,
 		TableCell,
-		LoadingOverlay
+		LoadingOverlay,
+		Alert
 	} from '$lib/components';
-	import { Search, Download, RotateCcw } from '@lucide/svelte';
+	import { toast } from '$lib/toast.svelte';
+	import { Search, Download, RotateCcw, FileSpreadsheet } from '@lucide/svelte';
 
 	let { data } = $props();
 
@@ -58,6 +60,13 @@
 		description="Monitoring Inputan Admin — filter departemen & tipe, pilih baris untuk export."
 	>
 		{#snippet actions()}
+			<a
+				href="/dashboard/laporan-produksi"
+				class="inline-flex h-9 items-center gap-1.5 rounded-lg border-[3px] border-border bg-primary px-3 text-xs font-black uppercase text-primary-foreground tracking-wide brutal-shadow-sm hover:opacity-90 transition-opacity"
+			>
+				<FileSpreadsheet class="size-4" />
+				Laporan SPK (Bahan & Hasil)
+			</a>
 			<Badge variant="secondary" class="border-[3px] font-mono font-black">
 				{data.total.toLocaleString('id-ID')} BARIS
 			</Badge>
@@ -180,6 +189,7 @@
 			onsubmit={() => {
 				loading = true;
 				loadingMsg = 'Menyiapkan file Excel...';
+				toast.info('Export Excel', selected.length > 0 ? `Mengekspor ${selected.length} transaksi produksi terpilih...` : 'Mengekspor data monitoring produksi...');
 				setTimeout(() => (loading = false), 3000);
 			}}
 			class="flex items-center gap-2"
@@ -205,15 +215,9 @@
 	</div>
 
 	{#if data.error}
-		<div
-			class="bg-error text-error-foreground flex items-center gap-2 rounded-xl border-[3px] border-border px-4 py-3 text-sm font-black uppercase tracking-wide brutal-shadow"
-			role="alert"
-		>
-			<span class="bg-card text-error flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border text-xs font-black">
-				!
-			</span>
-			<span>{data.error}</span>
-		</div>
+		<Alert variant="error" title="Terjadi Kesalahan" dismissible>
+			{data.error}
+		</Alert>
 	{/if}
 
 	<!-- Table -->
@@ -256,7 +260,9 @@
 										class="size-4 rounded border-2 border-border text-primary focus:ring-0 cursor-pointer"
 									/>
 								</TableCell>
-								<TableCell class="font-mono text-xs font-black">{r.No_Produksi}</TableCell>
+								<TableCell class="font-mono text-xs font-black">
+									{r.No_Produksi}
+								</TableCell>
 								<TableCell class="font-mono text-xs">
 									{r.Tanggal ? new Date(r.Tanggal).toLocaleDateString('id-ID') : '-'}
 								</TableCell>

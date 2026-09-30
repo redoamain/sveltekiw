@@ -12,9 +12,11 @@
 		TableHead,
 		TableBody,
 		TableCell,
-		LoadingOverlay
+		LoadingOverlay,
+		Alert,
+		toast
 	} from '$lib/components';
-	import { Search, CheckCircle, RotateCcw, Download } from '@lucide/svelte';
+	import { Search, CheckCircle, RotateCcw, Download, SquarePen } from '@lucide/svelte';
 
 	let { data, form } = $props();
 
@@ -51,6 +53,22 @@
 
 	let flashMsg = $derived(data.flash || '');
 	let flashErr = $derived(form?.error || data.flashErr || data.error || '');
+	let lastHandledMsg = $state<string | null>(null);
+	let lastHandledErr = $state<string | null>(null);
+
+	$effect(() => {
+		if (flashMsg && flashMsg !== lastHandledMsg) {
+			lastHandledMsg = flashMsg;
+			toast.success(flashMsg, { title: 'Sukses' });
+		}
+	});
+
+	$effect(() => {
+		if (flashErr && flashErr !== lastHandledErr) {
+			lastHandledErr = flashErr;
+			toast.error(flashErr, { title: 'Terjadi Kesalahan' });
+		}
+	});
 </script>
 
 <LoadingOverlay show={loading} message={loadingMsg} submessage="Mohon tunggu" />
@@ -131,27 +149,11 @@
 	</form>
 
 	{#if flashMsg}
-		<div
-			class="bg-success text-success-foreground flex items-center gap-2 rounded-xl border-[3px] border-border px-4 py-3 text-sm font-black uppercase tracking-wide brutal-shadow"
-			role="alert"
-		>
-			<span class="bg-card text-success flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border text-xs font-black">
-				✓
-			</span>
-			<span>{flashMsg}</span>
-		</div>
+		<Alert variant="success" message={flashMsg} dismissible />
 	{/if}
 
 	{#if flashErr}
-		<div
-			class="bg-error text-error-foreground flex items-center gap-2 rounded-xl border-[3px] border-border px-4 py-3 text-sm font-black uppercase tracking-wide brutal-shadow"
-			role="alert"
-		>
-			<span class="bg-card text-error flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border text-xs font-black">
-				!
-			</span>
-			<span>{flashErr}</span>
-		</div>
+		<Alert variant="error" message={flashErr} dismissible />
 	{/if}
 
 	<!-- Bulk actions bar brutal -->
@@ -271,12 +273,13 @@
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Remark (PO)</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Status</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">FinishedDate</TableHead>
+						<TableHead class="w-16 text-center font-mono text-[11px] font-black uppercase tracking-widest">Aksi</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>
 					{#if data.rows.length === 0}
 						<TableRow>
-							<TableCell colspan={7} class="h-24 text-center">
+							<TableCell colspan={8} class="h-24 text-center">
 								<p class="font-mono text-xs font-black uppercase tracking-wide text-muted-foreground">
 									Belum ada SPK yang cocok
 								</p>
@@ -294,7 +297,15 @@
 										class="size-4 rounded border-2 border-border text-primary focus:ring-0 cursor-pointer"
 									/>
 								</TableCell>
-								<TableCell class="font-mono text-xs font-black">{r.OrderID}</TableCell>
+								<TableCell class="font-mono text-xs font-black">
+									<a
+										href="/dashboard/input-spk?id={encodeURIComponent(r.OrderID)}"
+										class="text-primary hover:underline font-black inline-flex items-center gap-1"
+										title="Edit SPK #{r.OrderID}"
+									>
+										{r.OrderID}
+									</a>
+								</TableCell>
 								<TableCell class="font-mono text-xs">{r.OrderDate ?? '-'}</TableCell>
 								<TableCell>
 									<Badge variant="secondary" class="font-mono text-[10px]">{r.OrderType || '-'}</Badge>
@@ -309,6 +320,15 @@
 									</Badge>
 								</TableCell>
 								<TableCell class="font-mono text-xs">{r.FinishedDate ?? '-'}</TableCell>
+								<TableCell class="text-center">
+									<a
+										href="/dashboard/input-spk?id={encodeURIComponent(r.OrderID)}"
+										class="inline-flex size-7 items-center justify-center rounded-lg border-2 border-border bg-card text-foreground hover:bg-primary hover:text-primary-foreground brutal-shadow-xs transition-all"
+										title="Edit SPK #{r.OrderID}"
+									>
+										<SquarePen class="size-3.5" />
+									</a>
+								</TableCell>
 							</TableRow>
 						{/each}
 					{/if}

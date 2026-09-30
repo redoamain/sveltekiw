@@ -31,6 +31,8 @@ export const load: PageServerLoad = async ({ url }) => {
 	const tgl1 = url.searchParams.get('tgl1') ?? defaultStart;
 	const tgl2 = url.searchParams.get('tgl2') ?? today;
 	const q = (url.searchParams.get('q') ?? '').trim();
+	const sourceRaw = (url.searchParams.get('source') ?? 'spk').toLowerCase();
+	const source: 'spk' | 'so' = sourceRaw === 'so' ? 'so' : 'spk';
 	const flashMsg = url.searchParams.get('msg') ?? '';
 	const flashErr = url.searchParams.get('err') ?? '';
 	const pageRaw = parseInt(url.searchParams.get('page') ?? '1', 10);
@@ -42,8 +44,8 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	// Fetch orders, committed, overrides, and records concurrently
 	const [pagedResult, committedResult, overridesResult, recordsResult] = await Promise.all([
-		getActiveOrdersPaged(tgl1, tgl2, page, pageSize, q || undefined).catch((err: any) => {
-			loadError = err?.message || 'Gagal memuat SPK';
+		getActiveOrdersPaged(tgl1, tgl2, page, pageSize, q || undefined, source).catch((err: any) => {
+			loadError = err?.message || (source === 'so' ? 'Gagal memuat Sales Order' : 'Gagal memuat SPK');
 			return { rows: [], total: 0, totalQty: 0 };
 		}),
 		getCommitted().catch(() => ({ committedPOs: [], reservations: [] })),
@@ -68,7 +70,8 @@ export const load: PageServerLoad = async ({ url }) => {
 				rows: stored.rows,
 				summary: stored.summary,
 				planId: planIdParam,
-				spkList: stored.groups.map((g) => g.No_SPK)
+				spkList: stored.groups.map((g) => g.No_SPK),
+				sourceType: stored.sourceType ?? source
 			};
 		}
 	}
@@ -126,6 +129,7 @@ export const load: PageServerLoad = async ({ url }) => {
 		q,
 		page,
 		pageSize,
+		source,
 		orders,
 		groups,
 		pagedTotal,
@@ -148,20 +152,22 @@ export const actions: Actions = {
 		const tgl1 = String(fd.get('tgl1') ?? '');
 		const tgl2 = String(fd.get('tgl2') ?? '');
 		const q = String(fd.get('q') ?? '');
+		const source = (String(fd.get('source') ?? 'spk').toLowerCase() === 'so' ? 'so' : 'spk') as 'spk' | 'so';
 		const page = String(fd.get('page') ?? '1');
 		const pageSize = String(fd.get('pageSize') ?? '50');
 		const selectedSpks = fd.getAll('spk').map(String).filter(Boolean);
 
 		if (selectedSpks.length === 0) {
-			return fail(400, { error: 'Pilih minimal satu SPK terlebih dahulu.' });
+			const docLabel = source === 'so' ? 'Sales Order (SO)' : 'SPK';
+			return fail(400, { error: `Pilih minimal satu ${docLabel} terlebih dahulu.` });
 		}
 
 		try {
-			const allOrders = await getActiveOrders(tgl1, tgl2, q || undefined);
-			const computed = await computePlan(allOrders, selectedSpks);
+			const allOrders = await getActiveOrders(tgl1, tgl2, q || undefined, source);
+			const computed = await computePlan(allOrders, selectedSpks, source);
 			const planId = storePlan(computed);
 
-			const p = new URLSearchParams({ tgl1, tgl2, page, pageSize, planId });
+			const p = new URLSearchParams({ tgl1, tgl2, page, pageSize, source, planId });
 			if (q) p.set('q', q);
 			throw redirect(303, `/dashboard/ppic?${p.toString()}`);
 		} catch (err: any) {
@@ -220,7 +226,9 @@ export const actions: Actions = {
 				committedCount++;
 			}
 
-			throw redirect(303, `/dashboard/ppic?msg=${encodeURIComponent(`Commit berhasil untuk ${committedCount} SPK.`)}`);
+			const docType = stored.sourceType === 'so' ? 'SO' : 'SPK';
+			const srcParam = stored.sourceType ? `&source=${stored.sourceType}` : '';
+			throw redirect(303, `/dashboard/ppic?msg=${encodeURIComponent(`Commit berhasil untuk ${committedCount} ${docType}.`)}${srcParam}`);
 		} catch (err: any) {
 			if (err?.status === 303) throw err;
 			return fail(500, { error: err?.message || 'Gagal commit PO' });
@@ -255,7 +263,8 @@ export const actions: Actions = {
 				material_habis: stored.summary.habis
 			});
 
-			throw redirect(303, `/dashboard/ppic?msg=${encodeURIComponent(`Perhitungan tersimpan sebagai ${calcName || calcId}.`)}`);
+			const srcParam = stored.sourceType ? `&source=${stored.sourceType}` : '';
+			throw redirect(303, `/dashboard/ppic?msg=${encodeURIComponent(`Perhitungan tersimpan sebagai ${calcName || calcId}.`)}${srcParam}`);
 		} catch (err: any) {
 			if (err?.status === 303) throw err;
 			return fail(500, { error: err?.message || 'Gagal menyimpan perhitungan' });

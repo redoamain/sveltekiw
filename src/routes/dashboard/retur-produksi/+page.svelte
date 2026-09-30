@@ -12,9 +12,11 @@
 		TableHead,
 		TableBody,
 		TableCell,
-		LoadingOverlay
+		LoadingOverlay,
+		Alert
 	} from '$lib/components';
-	import { Search, Download } from '@lucide/svelte';
+	import { toast } from '$lib/toast.svelte';
+	import { Search, Download, Plus, ExternalLink } from '@lucide/svelte';
 
 	let { data } = $props();
 
@@ -58,6 +60,12 @@
 		description="Monitoring Memo In Retur Produksi (MoveType K) — filter tanggal & pencarian."
 	>
 		{#snippet actions()}
+			<a
+				href="/dashboard/input-retur"
+				class="bg-primary text-primary-foreground hover:opacity-90 border-border inline-flex items-center gap-1.5 rounded-lg border-[3px] px-3.5 py-1.5 text-xs font-black uppercase tracking-wider brutal-shadow-sm transition-transform active:translate-x-0.5 active:translate-y-0.5"
+			>
+				<Plus class="size-4" /> Input Retur
+			</a>
 			<Badge variant="secondary" class="border-[3px] font-mono font-black">
 				{data.total.toLocaleString('id-ID')} BARIS
 			</Badge>
@@ -106,6 +114,7 @@
 				/>
 			</div>
 		</div>
+
 		<div class="space-y-1">
 			<Label>Tampil</Label>
 			<select
@@ -118,9 +127,11 @@
 				<option value="10000">10.000</option>
 			</select>
 		</div>
+
 		<Button type="submit" class="h-11 border-[3px] font-black uppercase tracking-wide brutal-shadow-sm">
 			Tampilkan
 		</Button>
+
 		{#if data.q || data.tgl1 || data.tgl2}
 			<a
 				href="/dashboard/retur-produksi"
@@ -132,15 +143,9 @@
 	</form>
 
 	{#if data.error}
-		<div
-			class="bg-error text-error-foreground flex items-center gap-2 rounded-xl border-[3px] border-border px-4 py-3 text-sm font-black uppercase tracking-wide brutal-shadow"
-			role="alert"
-		>
-			<span class="bg-card text-error flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border text-xs font-black">
-				!
-			</span>
-			<span>{data.error}</span>
-		</div>
+		<Alert variant="error" title="Terjadi Kesalahan" dismissible>
+			{data.error}
+		</Alert>
 	{/if}
 
 	<!-- Table container -->
@@ -159,6 +164,7 @@
 					onsubmit={() => {
 						loading = true;
 						loadingMsg = 'Menyiapkan Excel...';
+						toast.info('Export Excel', selected.length > 0 ? `Mengekspor ${selected.length} transaksi terpilih...` : 'Mengekspor data retur produksi...');
 						setTimeout(() => (loading = false), 3000);
 					}}
 					class="inline-flex"
@@ -222,7 +228,16 @@
 										class="size-4 rounded border-2 border-border text-primary focus:ring-0 cursor-pointer"
 									/>
 								</TableCell>
-								<TableCell class="font-mono text-xs font-black">{r.No_Transaksi}</TableCell>
+								<TableCell class="font-mono text-xs font-black">
+									<a
+										href={`/dashboard/input-retur?id=${encodeURIComponent(r.No_Transaksi)}`}
+										class="hover:underline inline-flex items-center gap-1.5 text-primary hover:text-primary/80 font-black group"
+										title="Buka bukti Retur ini di formulir input"
+									>
+										{r.No_Transaksi}
+										<ExternalLink class="size-3 text-muted-foreground group-hover:text-primary transition-colors" />
+									</a>
+								</TableCell>
 								<TableCell class="font-mono text-xs">
 									{r.Tanggal ?? '-'}
 								</TableCell>

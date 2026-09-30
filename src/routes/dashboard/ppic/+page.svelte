@@ -18,8 +18,10 @@
 		TableHead,
 		TableBody,
 		TableCell,
-		LoadingOverlay
+		LoadingOverlay,
+		Alert
 	} from '$lib/components';
+	import { toast } from '$lib/toast.svelte';
 	import {
 		ClipboardList,
 		Search,
@@ -35,6 +37,10 @@
 	} from '@lucide/svelte';
 
 	let { data, form } = $props();
+
+	let isSO = $derived(data.source === 'so');
+	let docTypeLabel = $derived(isSO ? 'Sales Order' : 'SPK');
+	let docTypeShort = $derived(isSO ? 'SO' : 'SPK');
 
 	let activeTab = $state<'spk' | 'history' | 'overrides' | 'committed'>('spk');
 	let loading = $state(false);
@@ -85,6 +91,22 @@
 
 	let flashMsg = $derived(data.flashMsg || '');
 	let flashErr = $derived(form?.error || data.flashErr || data.loadError || '');
+	let lastHandledMsg = $state<string | null>(null);
+	let lastHandledErr = $state<string | null>(null);
+
+	$effect(() => {
+		if (flashMsg && flashMsg !== lastHandledMsg) {
+			lastHandledMsg = flashMsg;
+			toast.success('Berhasil', flashMsg);
+		}
+	});
+
+	$effect(() => {
+		if (flashErr && flashErr !== lastHandledErr) {
+			lastHandledErr = flashErr;
+			toast.error('Gagal', flashErr);
+		}
+	});
 </script>
 
 <LoadingOverlay show={loading} message={loadingMsg} submessage="Mohon tunggu, jangan tutup halaman." />
@@ -92,11 +114,11 @@
 <div class="space-y-6">
 	<PageHeader
 		title="Production Plan"
-		description="Hitung kebutuhan material, BOM override & commit reservasi stok per SPK."
+		description="Hitung kebutuhan material, BOM override & commit reservasi stok per {docTypeShort}."
 	>
 		{#snippet actions()}
 			<Badge variant="secondary" class="border-[3px] font-mono font-black">
-				{data.pagedTotal.toLocaleString('id-ID')} SPK AKTIF
+				{data.pagedTotal.toLocaleString('id-ID')} {docTypeShort} AKTIF
 			</Badge>
 			<Badge variant="primary" class="border-[3px] font-mono font-black">
 				{data.pagedTotalQty.toLocaleString('id-ID')} QTY
@@ -105,27 +127,15 @@
 	</PageHeader>
 
 	{#if flashMsg}
-		<div
-			class="bg-success text-success-foreground flex items-center gap-2 rounded-xl border-[3px] border-border px-4 py-3 text-sm font-black uppercase tracking-wide brutal-shadow"
-			role="alert"
-		>
-			<span class="bg-card text-success flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border text-xs font-black">
-				✓
-			</span>
-			<span>{flashMsg}</span>
-		</div>
+		<Alert variant="success" dismissible>
+			{flashMsg}
+		</Alert>
 	{/if}
 
 	{#if flashErr}
-		<div
-			class="bg-error text-error-foreground flex items-center gap-2 rounded-xl border-[3px] border-border px-4 py-3 text-sm font-black uppercase tracking-wide brutal-shadow"
-			role="alert"
-		>
-			<span class="bg-card text-error flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border text-xs font-black">
-				!
-			</span>
-			<span>{flashErr}</span>
-		</div>
+		<Alert variant="error" dismissible>
+			{flashErr}
+		</Alert>
 	{/if}
 
 	<!-- Tab navigation brutal -->
@@ -136,7 +146,7 @@
 			class="rounded-xl border-[3px] border-border px-4 py-2 text-xs font-black uppercase tracking-wide transition-all cursor-pointer brutal-shadow-sm
 				{activeTab === 'spk' ? 'bg-primary text-primary-foreground -translate-x-px -translate-y-px' : 'bg-card text-foreground hover:bg-muted'}"
 		>
-			SPK & Hitung Material
+			{docTypeShort} & Hitung Material
 		</button>
 		<button
 			type="button"
@@ -160,17 +170,42 @@
 			class="rounded-xl border-[3px] border-border px-4 py-2 text-xs font-black uppercase tracking-wide transition-all cursor-pointer brutal-shadow-sm
 				{activeTab === 'committed' ? 'bg-primary text-primary-foreground -translate-x-px -translate-y-px' : 'bg-card text-foreground hover:bg-muted'}"
 		>
-			PO Ter-commit ({data.committed.committedPOs.length})
+			Dokumen Ter-commit ({data.committed.committedPOs.length})
 		</button>
 	</div>
 
 	{#if activeTab === 'spk'}
+		<!-- Source selector (SPK vs Sales Order) -->
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<div class="flex items-center gap-1.5 bg-card p-1.5 rounded-xl border-[3px] border-border brutal-shadow">
+				<span class="px-2 font-mono text-[11px] font-black uppercase text-muted-foreground">Basis Perencanaan:</span>
+				<a
+					href="/dashboard/ppic?source=spk"
+					class="rounded-lg border-2 border-border px-3 py-1.5 text-xs font-black uppercase tracking-wide transition-all {data.source !== 'so' ? 'bg-primary text-primary-foreground brutal-shadow-sm -translate-y-0.5' : 'bg-background hover:bg-muted text-foreground'}"
+				>
+					📋 SPK (Work Order)
+				</a>
+				<a
+					href="/dashboard/ppic?source=so"
+					class="rounded-lg border-2 border-border px-3 py-1.5 text-xs font-black uppercase tracking-wide transition-all {data.source === 'so' ? 'bg-primary text-primary-foreground brutal-shadow-sm -translate-y-0.5' : 'bg-background hover:bg-muted text-foreground'}"
+				>
+					🛒 Sales Order (SO)
+				</a>
+			</div>
+			{#if isSO}
+				<Badge variant="secondary" class="border-2 border-dashed font-mono text-xs text-primary">
+					Mode Sales Order: Sumber tabel taSOhd & taSodt (Aktif)
+				</Badge>
+			{/if}
+		</div>
+
 		<!-- Filter bar -->
 		<form
 			method="get"
 			action="/dashboard/ppic"
 			class="bg-card flex flex-wrap items-end gap-3 rounded-xl border-[3px] border-border p-4 brutal-shadow"
 		>
+			<input type="hidden" name="source" value={data.source} />
 			<div class="space-y-1">
 				<Label for="tgl1">Tgl Awal</Label>
 				<Input type="date" id="tgl1" name="tgl1" value={data.tgl1} class="h-11 border-[3px]" />
@@ -187,7 +222,7 @@
 						id="q"
 						name="q"
 						value={data.q}
-						placeholder="No SPK / Kode Barang / Nama PO..."
+						placeholder={isSO ? "No SO / Kode Barang / Customer..." : "No SPK / Kode Barang / Nama PO..."}
 						class="h-11 border-[3px] pl-9 font-bold"
 					/>
 				</div>
@@ -210,7 +245,7 @@
 			</Button>
 			{#if data.q || data.tgl1}
 				<a
-					href="/dashboard/ppic"
+					href="/dashboard/ppic?source={data.source}"
 					class="border-border bg-card hover:bg-muted inline-flex h-11 items-center rounded-lg border-[3px] px-4 text-sm font-black uppercase tracking-wide brutal-shadow-sm"
 				>
 					Reset
@@ -233,7 +268,7 @@
 					</label>
 					{#if selectedSpks.length > 0}
 						<Badge variant="primary" class="border-2 font-mono">
-							{selectedSpks.length} SPK DIPILIH
+							{selectedSpks.length} {docTypeShort} DIPILIH
 						</Badge>
 					{/if}
 				</div>
@@ -249,6 +284,7 @@
 						}}
 						class="inline-flex"
 					>
+						<input type="hidden" name="source" value={data.source} />
 						<input type="hidden" name="tgl1" value={data.tgl1} />
 						<input type="hidden" name="tgl2" value={data.tgl2} />
 						<input type="hidden" name="q" value={data.q} />
@@ -279,6 +315,7 @@
 						}}
 						class="inline-flex"
 					>
+						<input type="hidden" name="source" value={data.source} />
 						<input type="hidden" name="tgl1" value={data.tgl1} />
 						<input type="hidden" name="tgl2" value={data.tgl2} />
 						<input type="hidden" name="q" value={data.q} />
@@ -305,8 +342,8 @@
 					<TableHeader>
 						<TableRow class="bg-muted/50">
 							<TableHead class="w-10 text-center">✓</TableHead>
-							<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">No SPK</TableHead>
-							<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Nama PO</TableHead>
+							<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">{isSO ? 'No SO' : 'No SPK'}</TableHead>
+							<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">{isSO ? 'Customer & Ket.' : 'Nama PO'}</TableHead>
 							<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Barang & QTY</TableHead>
 							<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Total QTY</TableHead>
 							<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Status</TableHead>
@@ -317,7 +354,7 @@
 							<TableRow>
 								<TableCell colspan={6} class="h-24 text-center">
 									<p class="font-mono text-xs font-black uppercase tracking-wide text-muted-foreground">
-										Tidak ada SPK aktif pada filter ini
+										Tidak ada {docTypeLabel} aktif pada filter ini
 									</p>
 								</TableCell>
 							</TableRow>
@@ -371,7 +408,8 @@
 					params={{
 						tgl1: data.tgl1,
 						tgl2: data.tgl2,
-						q: data.q || undefined
+						q: data.q || undefined,
+						source: data.source
 					}}
 				/>
 			</div>
@@ -429,12 +467,12 @@
 								method="post"
 								action="?/commit"
 								onsubmit={(e) => {
-									if (!confirm('Yakin ingin commit dan reservasi stok untuk SPK terpilih?')) {
+									if (!confirm(`Yakin ingin commit dan reservasi stok untuk ${docTypeShort} terpilih?`)) {
 										e.preventDefault();
 										return;
 									}
 									loading = true;
-									loadingMsg = 'Memproses commit PO...';
+									loadingMsg = `Memproses commit ${docTypeShort}...`;
 								}}
 								class="flex items-center gap-1.5"
 							>
@@ -453,7 +491,7 @@
 									variant="primary"
 									class="h-9 border-[3px] font-black uppercase text-xs brutal-shadow-sm cursor-pointer"
 								>
-									<ShieldCheck class="size-4 mr-1" /> Commit PO
+									<ShieldCheck class="size-4 mr-1" /> Commit {docTypeShort}
 								</Button>
 							</form>
 						{/if}
@@ -711,19 +749,19 @@
 			</div>
 		</div>
 	{:else if activeTab === 'committed'}
-		<!-- PO Ter-commit Tab -->
+		<!-- Dokumen Ter-commit Tab -->
 		<div class="bg-card overflow-hidden rounded-xl border-[3px] border-border brutal-shadow">
 			<div class="border-b-[3px] border-border px-4 py-3 bg-muted/40">
 				<h3 class="font-black uppercase tracking-tight text-base" style="font-family: var(--font-display)">
-					Daftar SPK / PO yang Telah di-Commit
+					Daftar Dokumen (SPK / SO) yang Telah di-Commit
 				</h3>
 			</div>
 			<div class="overflow-x-auto">
 				<Table wrapperClass="border-0 shadow-none rounded-none">
 					<TableHeader>
 						<TableRow class="bg-muted/50">
-							<TableHead class="font-mono text-[11px] font-black uppercase">No SPK</TableHead>
-							<TableHead class="font-mono text-[11px] font-black uppercase">Nama PO</TableHead>
+							<TableHead class="font-mono text-[11px] font-black uppercase">No Dokumen</TableHead>
+							<TableHead class="font-mono text-[11px] font-black uppercase">Nama PO / Customer</TableHead>
 							<TableHead class="font-mono text-[11px] font-black uppercase">Kode Barang</TableHead>
 							<TableHead class="font-mono text-[11px] font-black uppercase">QTY</TableHead>
 							<TableHead class="font-mono text-[11px] font-black uppercase">User</TableHead>
@@ -736,7 +774,7 @@
 							<TableRow>
 								<TableCell colspan={7} class="h-24 text-center">
 									<p class="font-mono text-xs font-black uppercase tracking-wide text-muted-foreground">
-										Belum ada PO yang di-commit
+										Belum ada SPK atau SO yang di-commit
 									</p>
 								</TableCell>
 							</TableRow>
@@ -755,7 +793,7 @@
 												method="post"
 												action="?/uncommit"
 												onsubmit={(e) => {
-													if (!confirm(`Yakin uncommit PO ${p.noSPK}? Reservasi stok akan dikembalikan.`)) {
+													if (!confirm(`Yakin uncommit dokumen ${p.noSPK}? Reservasi stok akan dikembalikan.`)) {
 														e.preventDefault();
 													}
 												}}

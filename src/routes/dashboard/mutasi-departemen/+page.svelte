@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { PageHeader, Badge, Button } from '$lib/components';
+	import { toast } from '$lib/toast.svelte';
 	import {
 		FileSpreadsheet,
 		ExternalLink,
@@ -13,8 +14,8 @@
 		Sparkles
 	} from '@lucide/svelte';
 
-	const KIW_SHEET_HOST = '192.168.1.215';
-	const KIW_SHEET_URL = 'https://kws.citiplumb.id';
+	const KIW_SHEET_HOST = 'localhost';
+	const KIW_SHEET_URL = 'http://localhost:8484';
 	const gristUrl = `${KIW_SHEET_URL}/o/citiplumb/doc/pnPY9D1FA4hsBGaBtdbVz2`;
 	let iframeEl = $state<HTMLIFrameElement | null>(null);
 	let isFullscreen = $state(false);
@@ -24,6 +25,7 @@
 		if (iframeEl) {
 			const currentSrc = iframeEl.src;
 			iframeEl.src = '';
+			toast.info('Refresh Frame', 'Memuat ulang lembar kerja kiw-sheet...');
 			setTimeout(() => {
 				if (iframeEl) iframeEl.src = currentSrc;
 			}, 100);
@@ -32,9 +34,13 @@
 
 	function toggleFullscreen() {
 		isFullscreen = !isFullscreen;
+		if (isFullscreen) {
+			toast.info('Layar Penuh', 'Mode fullscreen diaktifkan');
+		}
 	}
 
 	function downloadDept(dept: string) {
+		toast.info('Download Excel', `Mengunduh data Excel departemen ${dept}...`);
 		window.location.href = `http://${KIW_SHEET_HOST}:8485/api/export-dept?dept=${dept}`;
 	}
 </script>

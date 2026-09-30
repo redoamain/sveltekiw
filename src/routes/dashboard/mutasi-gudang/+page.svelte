@@ -12,8 +12,10 @@
 		TableHead,
 		TableBody,
 		TableCell,
-		LoadingOverlay
+		LoadingOverlay,
+		Alert
 	} from '$lib/components';
+	import { toast } from '$lib/toast.svelte';
 	import { Search, Download, ArrowLeftRight } from '@lucide/svelte';
 
 	let { data } = $props();
@@ -58,6 +60,13 @@
 		description="Monitoring Mutasi Antar Gudang — filter tanggal & pencarian."
 	>
 		{#snippet actions()}
+			<a
+				href="/dashboard/input-mutasi"
+				class="inline-flex items-center gap-1.5 border-2 border-black bg-[#51CF66] px-3.5 py-1.5 text-xs font-black uppercase tracking-wider text-black shadow-[2px_2px_0px_0px_#000] transition hover:bg-[#40C057] hover:-translate-y-0.5 active:translate-x-0.5 active:translate-y-0.5"
+			>
+				<ArrowLeftRight class="h-3.5 w-3.5" />
+				+ Input Mutasi Baru
+			</a>
 			<Badge variant="secondary" class="border-[3px] font-mono font-black">
 				{data.total.toLocaleString('id-ID')} BARIS
 			</Badge>
@@ -137,15 +146,9 @@
 	</form>
 
 	{#if data.error}
-		<div
-			class="bg-error text-error-foreground flex items-center gap-2 rounded-xl border-[3px] border-border px-4 py-3 text-sm font-black uppercase tracking-wide brutal-shadow"
-			role="alert"
-		>
-			<span class="bg-card text-error flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border text-xs font-black">
-				!
-			</span>
-			<span>{data.error}</span>
-		</div>
+		<Alert variant="error" title="Terjadi Kesalahan" dismissible>
+			{data.error}
+		</Alert>
 	{/if}
 
 	<!-- Table wrapper -->
@@ -164,6 +167,7 @@
 					onsubmit={() => {
 						loading = true;
 						loadingMsg = 'Menyiapkan Excel...';
+						toast.info('Export Excel', selected.length > 0 ? `Mengekspor ${selected.length} transaksi terpilih...` : 'Mengekspor data monitoring mutasi...');
 						setTimeout(() => (loading = false), 3000);
 					}}
 					class="inline-flex"
@@ -227,7 +231,15 @@
 										class="size-4 rounded border-2 border-border text-primary focus:ring-0 cursor-pointer"
 									/>
 								</TableCell>
-								<TableCell class="font-mono text-xs font-black">{r.No_Transaksi}</TableCell>
+								<TableCell class="font-mono text-xs font-black">
+									<a
+										href={`/dashboard/input-mutasi?id=${r.No_Transaksi}`}
+										class="text-blue-700 hover:text-blue-900 hover:underline"
+										title="Buka / Edit transaksi mutasi ini"
+									>
+										{r.No_Transaksi}
+									</a>
+								</TableCell>
 								<TableCell class="font-mono text-xs">
 									{r.Tanggal ?? '-'}
 								</TableCell>

@@ -21,6 +21,7 @@ import type {
   BomOverride,
   CalculationRecord,
   CommittedPO,
+  PlanningSourceType,
   ProductionOrder,
   SaveCalculationPayload,
   StockReservation,
@@ -37,7 +38,7 @@ export const daysAgoISO = (n: number) => {
 };
 
 // =====================================================================
-// ORDERS — SPK aktif dari taPROrder (OrderID 'AS%', belum completed)
+// ORDERS — SPK aktif (taPROrder) atau Sales Order aktif (taSOhd & taSodt)
 // =====================================================================
 interface OrderRowDb {
   No_SPK: string;
@@ -45,14 +46,55 @@ interface OrderRowDb {
   Nama_PO: string;
   Kode_Barang: string;
   QTY: number;
+  Nama_Barang?: string;
+  sourceType?: PlanningSourceType;
 }
 
 export async function getActiveOrders(
   startDate?: string,
   endDate?: string,
   q?: string,
+  sourceType: PlanningSourceType = "spk",
 ): Promise<ProductionOrder[]> {
-  let query = `
+  const isSO = sourceType === "so";
+  let query = "";
+  const inputs: Parameters<typeof runQuery>[1] = [];
+
+  if (isSO) {
+    query = `
+      SELECT TOP (10000)
+        hd.[OrderID] AS No_SPK,
+        hd.[OrderDate] AS Tanggal_Order,
+        COALESCE(c.[CompanyName1], hd.[CompanyID], '') + CASE WHEN hd.[Remark] IS NOT NULL AND LTRIM(RTRIM(hd.[Remark])) <> '' THEN ' - ' + LTRIM(RTRIM(hd.[Remark])) ELSE '' END AS Nama_PO,
+        dt.[ItemID] AS Kode_Barang,
+        dt.[Itemname] AS Nama_Barang,
+        dt.[Kgs] AS QTY
+      FROM [cp].[dbo].[taSOhd] AS hd
+      INNER JOIN [cp].[dbo].[taSodt] AS dt
+        ON hd.[OrderID] = dt.[OrderID]
+        AND hd.[OrderType] = dt.[OrderType]
+      LEFT JOIN [cp].[dbo].[taCustomer] AS c
+        ON hd.[CompanyID] = c.[CompanyID]
+      WHERE hd.[Completed] = 0 AND hd.[Canceled] = 0
+    `;
+    if (startDate && endDate) {
+      query += `
+        AND hd.[OrderDate] >= @StartDate
+        AND hd.[OrderDate] <= @EndDate
+      `;
+      inputs.push(
+        { name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` },
+        { name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` },
+      );
+    }
+    const qq = (q ?? "").trim();
+    if (qq) {
+      query += ` AND (hd.[OrderID] LIKE @q OR hd.[CompanyID] LIKE @q OR c.[CompanyName1] LIKE @q OR hd.[Remark] LIKE @q OR dt.[ItemID] LIKE @q OR dt.[Itemname] LIKE @q)`;
+      inputs.push({ name: "q", type: sql.NVarChar as unknown as sql.ISqlType, value: `%${qq}%` });
+    }
+    query += ` ORDER BY hd.[OrderDate] DESC`;
+  } else {
+    query = `
       SELECT TOP (10000)
         hd.[OrderID] AS No_SPK,
         hd.[OrderDate] AS Tanggal_Order,
@@ -65,32 +107,30 @@ export async function getActiveOrders(
         AND hd.[OrderType] = dt.[OrderType]
       WHERE hd.[Completed] = '0' AND hd.[OrderID] LIKE 'AS%'
     `;
-  const inputs: Parameters<typeof runQuery>[1] = [];
-
-  if (startDate && endDate) {
-    query += `
+    if (startDate && endDate) {
+      query += `
         AND hd.[OrderDate] >= @StartDate
         AND hd.[OrderDate] <= @EndDate
       `;
-    inputs.push(
-      { name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` },
-      { name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` },
-    );
+      inputs.push(
+        { name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` },
+        { name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` },
+      );
+    }
+    const qq = (q ?? "").trim();
+    if (qq) {
+      query += ` AND (hd.[OrderID] LIKE @q OR hd.[Remark] LIKE @q OR dt.[itemID] LIKE @q)`;
+      inputs.push({ name: "q", type: sql.NVarChar as unknown as sql.ISqlType, value: `%${qq}%` });
+    }
+    query += ` ORDER BY hd.[OrderDate] DESC`;
   }
-
-  const qq = (q ?? "").trim();
-  if (qq) {
-    query += ` AND (hd.[OrderID] LIKE @q OR hd.[Remark] LIKE @q OR dt.[itemID] LIKE @q)`;
-    inputs.push({ name: "q", type: sql.NVarChar as unknown as sql.ISqlType, value: `%${qq}%` });
-  }
-
-  query += ` ORDER BY hd.[OrderDate] DESC`;
 
   const result = await runQuery(query, inputs);
   return (result.recordset as OrderRowDb[]).map((record) => ({
     ...record,
     QTY: Number(record.QTY) || 0,
     Tanggal_Order: record.Tanggal_Order ? isoDate(new Date(record.Tanggal_Order)) : undefined,
+    sourceType,
   }));
 }
 
@@ -107,90 +147,179 @@ export async function getActiveOrdersPaged(
   page: number,
   pageSize: number,
   q?: string,
+  sourceType: PlanningSourceType = "spk",
 ): Promise<PagedOrdersResult> {
+  const isSO = sourceType === "so";
   const offset = Math.max(0, (Math.max(1, page) - 1) * Math.max(1, pageSize));
   const limit = Math.max(1, pageSize);
-
-  let where = `WHERE hd.[Completed] = '0' AND hd.[OrderID] LIKE 'AS%'`;
+  const qq = (q ?? "").trim();
   const inputs: Parameters<typeof runQuery>[1] = [];
 
-  if (startDate && endDate) {
-    where += ` AND hd.[OrderDate] >= @StartDate AND hd.[OrderDate] <= @EndDate`;
-    inputs.push(
-      { name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` },
-      { name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` },
-    );
-  }
+  if (isSO) {
+    let where = `WHERE hd.[Completed] = 0 AND hd.[Canceled] = 0`;
+    if (startDate && endDate) {
+      where += ` AND hd.[OrderDate] >= @StartDate AND hd.[OrderDate] <= @EndDate`;
+      inputs.push(
+        { name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` },
+        { name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` },
+      );
+    }
+    if (qq) {
+      where += ` AND (hd.[OrderID] LIKE @q OR hd.[CompanyID] LIKE @q OR c.[CompanyName1] LIKE @q OR hd.[Remark] LIKE @q OR dt.[ItemID] LIKE @q OR dt.[Itemname] LIKE @q)`;
+      inputs.push({ name: "q", type: sql.NVarChar as unknown as sql.ISqlType, value: `%${qq}%` });
+    }
 
-  const qq = (q ?? "").trim();
-  if (qq) {
-    where += ` AND (hd.[OrderID] LIKE @q OR hd.[Remark] LIKE @q OR dt.[itemID] LIKE @q)`;
-    inputs.push({ name: "q", type: sql.NVarChar as unknown as sql.ISqlType, value: `%${qq}%` });
-  }
+    const countQuery = `
+      SELECT COUNT(DISTINCT hd.[OrderID]) AS tot, COALESCE(SUM(dt.[Kgs]), 0) AS sumQty
+      FROM [cp].[dbo].[taSOhd] hd
+      INNER JOIN [cp].[dbo].[taSodt] dt ON hd.[OrderID]=dt.[OrderID] AND hd.[OrderType]=dt.[OrderType]
+      LEFT JOIN [cp].[dbo].[taCustomer] c ON hd.[CompanyID]=c.[CompanyID]
+      ${where}`;
 
-  // Hitung berbasis DISTINCT SPK + total qty seluruh rentang filter
-  const countQuery = `
-    SELECT COUNT(DISTINCT hd.[OrderID]) AS tot, COALESCE(SUM(dt.[Kgs]), 0) AS sumQty
-    FROM [cp].[dbo].[taPROrder] hd
-    INNER JOIN [cp].[dbo].[taPROrderDt] dt ON hd.[OrderID]=dt.[OrderID] AND hd.[OrderType]=dt.[OrderType]
-    ${where}`;
+    const idsFromClause = qq
+      ? `FROM [cp].[dbo].[taSOhd] hd INNER JOIN [cp].[dbo].[taSodt] dt ON hd.[OrderID]=dt.[OrderID] AND hd.[OrderType]=dt.[OrderType] LEFT JOIN [cp].[dbo].[taCustomer] c ON hd.[CompanyID]=c.[CompanyID]`
+      : `FROM [cp].[dbo].[taSOhd] hd`;
 
-  // 1) Ambil daftar OrderID yang masuk halaman ini (distinct SPK, urut tgl terbaru)
-  const idsFromClause = qq
-    ? `FROM [cp].[dbo].[taPROrder] hd INNER JOIN [cp].[dbo].[taPROrderDt] dt ON hd.[OrderID]=dt.[OrderID] AND hd.[OrderType]=dt.[OrderType]`
-    : `FROM [cp].[dbo].[taPROrder] hd`;
+    const idsQuery = `
+      SELECT hd.[OrderID] AS id
+      ${idsFromClause}
+      ${where}
+      GROUP BY hd.[OrderID], hd.[OrderDate]
+      ORDER BY hd.[OrderDate] DESC
+      OFFSET @Off ROWS FETCH NEXT @Lim ROWS ONLY`;
 
-  const idsQuery = `
-    SELECT hd.[OrderID] AS id
-    ${idsFromClause}
-    ${where}
-    GROUP BY hd.[OrderID], hd.[OrderDate]
-    ORDER BY hd.[OrderDate] DESC
-    OFFSET @Off ROWS FETCH NEXT @Lim ROWS ONLY`;
+    const [countRes, idsRes] = await Promise.all([
+      runQuery(countQuery, [...inputs]),
+      runQuery(idsQuery, [
+        ...inputs,
+        { name: "Off", type: sql.Int, value: offset },
+        { name: "Lim", type: sql.Int, value: limit },
+      ]),
+    ]);
 
-  const [countRes, idsRes] = await Promise.all([
-    runQuery(countQuery, [...inputs]),
-    runQuery(idsQuery, [
-      ...inputs,
-      { name: "Off", type: sql.Int, value: offset },
-      { name: "Lim", type: sql.Int, value: limit },
-    ]),
-  ]);
+    const total = Number(countRes.recordset[0]?.tot) || 0;
+    const totalQty = Number(countRes.recordset[0]?.sumQty) || 0;
+    if (total === 0) return { rows: [], total: 0, totalQty: 0 };
 
-  const total = Number(countRes.recordset[0]?.tot) || 0; // jumlah SPK distinct
-  const totalQty = Number(countRes.recordset[0]?.sumQty) || 0;
-  if (total === 0) return { rows: [], total: 0, totalQty: 0 };
+    const pageIds: string[] = (idsRes.recordset as { id: string }[]).map((r) => r.id);
+    if (pageIds.length === 0) return { rows: [], total, totalQty };
 
-  const pageIds: string[] = (idsRes.recordset as { id: string }[]).map((r) => r.id);
-  if (pageIds.length === 0) return { rows: [], total, totalQty };
+    const detailRows: OrderRowDb[] = [];
+    const CHUNK = 400;
+    for (let i = 0; i < pageIds.length; i += CHUNK) {
+      const chunk = pageIds.slice(i, i + CHUNK);
+      const ph = chunk.map((_, j) => `@pid${j}`).join(", ");
+      const chunkInputs = chunk.map((id, j) => ({
+        name: `pid${j}`,
+        type: sql.VarChar(50) as unknown as sql.ISqlType,
+        value: id,
+      }));
+      const chunkQ = `
+        SELECT
+          hd.[OrderID] AS No_SPK,
+          hd.[OrderDate] AS Tanggal_Order,
+          COALESCE(c.[CompanyName1], hd.[CompanyID], '') + CASE WHEN hd.[Remark] IS NOT NULL AND LTRIM(RTRIM(hd.[Remark])) <> '' THEN ' - ' + LTRIM(RTRIM(hd.[Remark])) ELSE '' END AS Nama_PO,
+          dt.[ItemID] AS Kode_Barang,
+          dt.[Itemname] AS Nama_Barang,
+          dt.[Kgs] AS QTY
+        FROM [cp].[dbo].[taSOhd] hd
+        INNER JOIN [cp].[dbo].[taSodt] dt ON hd.[OrderID]=dt.[OrderID] AND hd.[OrderType]=dt.[OrderType]
+        LEFT JOIN [cp].[dbo].[taCustomer] c ON hd.[CompanyID]=c.[CompanyID]
+        WHERE hd.[OrderID] IN (${ph})
+        ORDER BY hd.[OrderDate] DESC, hd.[OrderID]`;
+      const chunkRes = await runQuery(chunkQ, chunkInputs);
+      detailRows.push(...(chunkRes.recordset as OrderRowDb[]));
+    }
 
-  // 2) Ambil detail hanya untuk SPK di halaman ini (chunk IN-list agar aman)
-  const detailRows: OrderRowDb[] = [];
-  const CHUNK = 400;
-  for (let i = 0; i < pageIds.length; i += CHUNK) {
-    const chunk = pageIds.slice(i, i + CHUNK);
-    const ph = chunk.map((_, j) => `@pid${j}`).join(", ");
-    const chunkInputs = chunk.map((id, j) => ({
-      name: `pid${j}`,
-      type: sql.VarChar(50) as unknown as sql.ISqlType,
-      value: id,
+    const rows = detailRows.map((r) => ({
+      ...r,
+      QTY: Number(r.QTY) || 0,
+      Tanggal_Order: r.Tanggal_Order ? isoDate(new Date(r.Tanggal_Order)) : undefined,
+      sourceType: "so" as PlanningSourceType,
     }));
-    const chunkQ = `
-      SELECT hd.[OrderID] AS No_SPK, hd.[OrderDate] AS Tanggal_Order, hd.[Remark] AS Nama_PO, dt.[itemID] AS Kode_Barang, dt.[Kgs] AS QTY
+    return { rows, total, totalQty };
+  } else {
+    let where = `WHERE hd.[Completed] = '0' AND hd.[OrderID] LIKE 'AS%'`;
+    const inputs: Parameters<typeof runQuery>[1] = [];
+
+    if (startDate && endDate) {
+      where += ` AND hd.[OrderDate] >= @StartDate AND hd.[OrderDate] <= @EndDate`;
+      inputs.push(
+        { name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` },
+        { name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` },
+      );
+    }
+
+    const qq = (q ?? "").trim();
+    if (qq) {
+      where += ` AND (hd.[OrderID] LIKE @q OR hd.[Remark] LIKE @q OR dt.[itemID] LIKE @q)`;
+      inputs.push({ name: "q", type: sql.NVarChar as unknown as sql.ISqlType, value: `%${qq}%` });
+    }
+
+    // Hitung berbasis DISTINCT SPK + total qty seluruh rentang filter
+    const countQuery = `
+      SELECT COUNT(DISTINCT hd.[OrderID]) AS tot, COALESCE(SUM(dt.[Kgs]), 0) AS sumQty
       FROM [cp].[dbo].[taPROrder] hd
       INNER JOIN [cp].[dbo].[taPROrderDt] dt ON hd.[OrderID]=dt.[OrderID] AND hd.[OrderType]=dt.[OrderType]
-      WHERE hd.[OrderID] IN (${ph})
-      ORDER BY hd.[OrderDate] DESC, hd.[OrderID]`;
-    const chunkRes = await runQuery(chunkQ, chunkInputs);
-    detailRows.push(...(chunkRes.recordset as OrderRowDb[]));
+      ${where}`;
+
+    // 1) Ambil daftar OrderID yang masuk halaman ini (distinct SPK, urut tgl terbaru)
+    const idsFromClause = qq
+      ? `FROM [cp].[dbo].[taPROrder] hd INNER JOIN [cp].[dbo].[taPROrderDt] dt ON hd.[OrderID]=dt.[OrderID] AND hd.[OrderType]=dt.[OrderType]`
+      : `FROM [cp].[dbo].[taPROrder] hd`;
+
+    const idsQuery = `
+      SELECT hd.[OrderID] AS id
+      ${idsFromClause}
+      ${where}
+      GROUP BY hd.[OrderID], hd.[OrderDate]
+      ORDER BY hd.[OrderDate] DESC
+      OFFSET @Off ROWS FETCH NEXT @Lim ROWS ONLY`;
+
+    const [countRes, idsRes] = await Promise.all([
+      runQuery(countQuery, [...inputs]),
+      runQuery(idsQuery, [
+        ...inputs,
+        { name: "Off", type: sql.Int, value: offset },
+        { name: "Lim", type: sql.Int, value: limit },
+      ]),
+    ]);
+
+    const total = Number(countRes.recordset[0]?.tot) || 0; // jumlah SPK distinct
+    const totalQty = Number(countRes.recordset[0]?.sumQty) || 0;
+    if (total === 0) return { rows: [], total: 0, totalQty: 0 };
+
+    const pageIds: string[] = (idsRes.recordset as { id: string }[]).map((r) => r.id);
+    if (pageIds.length === 0) return { rows: [], total, totalQty };
+
+    // 2) Ambil detail hanya untuk SPK di halaman ini (chunk IN-list agar aman)
+    const detailRows: OrderRowDb[] = [];
+    const CHUNK = 400;
+    for (let i = 0; i < pageIds.length; i += CHUNK) {
+      const chunk = pageIds.slice(i, i + CHUNK);
+      const ph = chunk.map((_, j) => `@pid${j}`).join(", ");
+      const chunkInputs = chunk.map((id, j) => ({
+        name: `pid${j}`,
+        type: sql.VarChar(50) as unknown as sql.ISqlType,
+        value: id,
+      }));
+      const chunkQ = `
+        SELECT hd.[OrderID] AS No_SPK, hd.[OrderDate] AS Tanggal_Order, hd.[Remark] AS Nama_PO, dt.[itemID] AS Kode_Barang, dt.[Kgs] AS QTY
+        FROM [cp].[dbo].[taPROrder] hd
+        INNER JOIN [cp].[dbo].[taPROrderDt] dt ON hd.[OrderID]=dt.[OrderID] AND hd.[OrderType]=dt.[OrderType]
+        WHERE hd.[OrderID] IN (${ph})
+        ORDER BY hd.[OrderDate] DESC, hd.[OrderID]`;
+      const chunkRes = await runQuery(chunkQ, chunkInputs);
+      detailRows.push(...(chunkRes.recordset as OrderRowDb[]));
+    }
+    const rows = detailRows.map((r) => ({
+      ...r,
+      QTY: Number(r.QTY) || 0,
+      Tanggal_Order: r.Tanggal_Order ? isoDate(new Date(r.Tanggal_Order)) : undefined,
+      sourceType: "spk" as PlanningSourceType,
+    }));
+    return { rows, total, totalQty };
   }
-  const rows = detailRows.map((r) => ({
-    ...r,
-    QTY: Number(r.QTY) || 0,
-    Tanggal_Order: r.Tanggal_Order ? isoDate(new Date(r.Tanggal_Order)) : undefined,
-  }));
-  // Pastikan urut sesuai idsQuery (ORDER BY tgl DESC) — sudah OK karena chunkQ pakai ORDER BY sama
-  return { rows, total, totalQty };
 }
 
 // =====================================================================
@@ -381,11 +510,13 @@ export interface ComputedPlan {
   bomByKodeBarang: Map<string, BomItem[]>;
   stockRows: Map<string, StockRow>;
   reservations: StockReservation[];
+  sourceType?: PlanningSourceType;
 }
 
 export async function computePlan(
   orders: ProductionOrder[],
   selectedSpks: string[],
+  sourceType: PlanningSourceType = "spk",
 ): Promise<ComputedPlan> {
   const spkSet = new Set(selectedSpks);
   const selectedOrders =
@@ -445,7 +576,7 @@ export async function computePlan(
   //    stok = SaldoAkhirFisik, + QtyReserved PO lain.
   const { rows, summary } = buildPlan(agg, bomByKodeBarang, stockRows, reservationsByItem);
 
-  return { rows, summary, agg, groups, bomByKodeBarang, stockRows, reservations };
+  return { rows, summary, agg, groups, bomByKodeBarang, stockRows, reservations, sourceType };
 }
 
 // Penyimpanan plan antara POST hitung → commit/simpan/export (tanpa hidden JSON besar).
@@ -662,6 +793,10 @@ export async function getCommitted(): Promise<CommittedData> {
           SELECT 1 FROM [cp].[dbo].[taPROrder] o
           WHERE o.OrderID = cp.No_SPK AND (o.Completed = 1 OR o.Completed = '1')
         )
+        AND NOT EXISTS (
+          SELECT 1 FROM [cp].[dbo].[taSOhd] so
+          WHERE so.OrderID = cp.No_SPK AND (so.Completed = 1 OR so.Completed = '1' OR so.Canceled = 1 OR so.Canceled = '1')
+        )
       ORDER BY cp.CreatedAt DESC
     `),
     runQuery(`
@@ -682,6 +817,10 @@ export async function getCommitted(): Promise<CommittedData> {
         AND NOT EXISTS (
           SELECT 1 FROM [cp].[dbo].[taPROrder] o
           WHERE o.OrderID = sr.No_SPK AND (o.Completed = 1 OR o.Completed = '1')
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM [cp].[dbo].[taSOhd] so
+          WHERE so.OrderID = sr.No_SPK AND (so.Completed = 1 OR so.Completed = '1' OR so.Canceled = 1 OR so.Canceled = '1')
         )
       ORDER BY sr.ReservationDate DESC
     `)

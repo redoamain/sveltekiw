@@ -12,9 +12,11 @@
 		TableHead,
 		TableBody,
 		TableCell,
-		LoadingOverlay
+		LoadingOverlay,
+		Alert
 	} from '$lib/components';
-	import { Search, Download, Truck } from '@lucide/svelte';
+	import { toast } from '$lib/toast.svelte';
+	import { Search, Download, Truck, Plus, ExternalLink } from '@lucide/svelte';
 
 	let { data } = $props();
 
@@ -58,6 +60,13 @@
 		description="Monitoring Pemasukan Barang Dari Supplier (taTransIHD2) — filter tanggal & pencarian."
 	>
 		{#snippet actions()}
+			<a
+				href="/dashboard/input-penerimaan"
+				class="inline-flex h-9 items-center gap-1.5 rounded-lg border-[3px] border-border bg-primary px-3 text-xs font-black uppercase text-primary-foreground tracking-wide brutal-shadow-sm hover:opacity-90 transition-opacity"
+			>
+				<Plus class="size-4" />
+				Input Penerimaan
+			</a>
 			<Badge variant="secondary" class="border-[3px] font-mono font-black">
 				{data.total.toLocaleString('id-ID')} BARIS
 			</Badge>
@@ -137,15 +146,9 @@
 	</form>
 
 	{#if data.error}
-		<div
-			class="bg-error text-error-foreground flex items-center gap-2 rounded-xl border-[3px] border-border px-4 py-3 text-sm font-black uppercase tracking-wide brutal-shadow"
-			role="alert"
-		>
-			<span class="bg-card text-error flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border text-xs font-black">
-				!
-			</span>
-			<span>{data.error}</span>
-		</div>
+		<Alert variant="error" title="Terjadi Kesalahan" dismissible>
+			{data.error}
+		</Alert>
 	{/if}
 
 	<!-- Table wrapper -->
@@ -164,6 +167,7 @@
 					onsubmit={() => {
 						loading = true;
 						loadingMsg = 'Menyiapkan Excel...';
+						toast.info('Export Excel', selected.length > 0 ? `Mengekspor ${selected.length} transaksi terpilih...` : 'Mengekspor data pemasukan gudang...');
 						setTimeout(() => (loading = false), 3000);
 					}}
 					class="inline-flex"
@@ -227,7 +231,16 @@
 										class="size-4 rounded border-2 border-border text-primary focus:ring-0 cursor-pointer"
 									/>
 								</TableCell>
-								<TableCell class="font-mono text-xs font-black">{r.No_Transaksi}</TableCell>
+								<TableCell class="font-mono text-xs font-black">
+									<a
+										href={`/dashboard/input-penerimaan?id=${encodeURIComponent(r.No_Transaksi)}`}
+										class="inline-flex items-center gap-1 text-primary hover:underline hover:text-primary/80 transition-colors"
+										title="Buka form input / edit transaksi ini"
+									>
+										{r.No_Transaksi}
+										<ExternalLink class="size-3 text-muted-foreground" />
+									</a>
+								</TableCell>
 								<TableCell class="font-mono text-xs">
 									{r.Tanggal ?? '-'}
 								</TableCell>

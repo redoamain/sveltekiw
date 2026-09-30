@@ -12,9 +12,11 @@
 		TableHead,
 		TableBody,
 		TableCell,
-		LoadingOverlay
+		LoadingOverlay,
+		Alert
 	} from '$lib/components';
-	import { Search, Download, RotateCcw } from '@lucide/svelte';
+	import { toast } from '$lib/toast.svelte';
+	import { Search, Download, RotateCcw, ExternalLink } from '@lucide/svelte';
 
 	let { data } = $props();
 
@@ -135,15 +137,9 @@
 	</form>
 
 	{#if data.error}
-		<div
-			class="bg-error text-error-foreground flex items-center gap-2 rounded-xl border-[3px] border-border px-4 py-3 text-sm font-black uppercase tracking-wide brutal-shadow"
-			role="alert"
-		>
-			<span class="bg-card text-error flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border text-xs font-black">
-				!
-			</span>
-			<span>{data.error}</span>
-		</div>
+		<Alert variant="error" title="Terjadi Kesalahan" dismissible>
+			{data.error}
+		</Alert>
 	{/if}
 
 	<!-- Table wrapper -->
@@ -162,6 +158,7 @@
 					onsubmit={() => {
 						loading = true;
 						loadingMsg = 'Menyiapkan Excel...';
+						toast.info('Export Excel', selected.length > 0 ? `Mengekspor ${selected.length} transaksi terpilih...` : 'Mengekspor data monitoring LBM...');
 						setTimeout(() => (loading = false), 3000);
 					}}
 					class="inline-flex"
@@ -225,7 +222,16 @@
 										class="size-4 rounded border-2 border-border text-primary focus:ring-0 cursor-pointer"
 									/>
 								</TableCell>
-								<TableCell class="font-mono text-xs font-black">{r.No_Transaksi}</TableCell>
+								<TableCell class="font-mono text-xs font-black">
+									<a
+										href={`/dashboard/input-lbm?id=${encodeURIComponent(r.No_Transaksi)}`}
+										class="hover:underline inline-flex items-center gap-1.5 text-primary hover:text-primary/80 font-black group"
+										title="Buka bukti LBM ini di formulir input"
+									>
+										{r.No_Transaksi}
+										<ExternalLink class="size-3 text-muted-foreground group-hover:text-primary transition-colors" />
+									</a>
+								</TableCell>
 								<TableCell class="font-mono text-xs">
 									{r.Tanggal ?? '-'}
 								</TableCell>
