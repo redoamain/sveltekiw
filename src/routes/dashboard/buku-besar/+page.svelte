@@ -58,15 +58,44 @@
 		if (pollInterval) clearInterval(pollInterval);
 	});
 
-	// Collapsible state per account (default expanded jika ada transaksi)
-	let collapsedAccounts = $state<Record<string, boolean>>({});
-
+	// Filter input states di Halaman
+	let tgl1Input = $state('');
+	let tgl2Input = $state('');
 	let acc1Input = $state('');
 	let acc2Input = $state('');
+
+	// State Modal Antrian BullMQ
+	let showQueueModal = $state(false);
+	let queueLoading = $state(false);
+	let currentJobId = $state<string | null>(null);
+	let jobState = $state<'waiting' | 'active' | 'completed' | 'failed' | null>(null);
+	let jobProgress = $state(0);
+	let jobResult = $state<any>(null);
+	let jobError = $state<string | null>(null);
+	let pollInterval = $state<any>(null);
+
+	// Parameter khusus di dalam Modal Export BullMQ
+	let exportTgl1 = $state('');
+	let exportTgl2 = $state('');
+	let exportAcc1 = $state('1101');
+	let exportAcc2 = $state('9999');
+	let exportCurr = $state('IDR');
+	let exportJu = $state(0);
+	let exportLawanTransaksi = $state(1);
+	let exportHideEmpty = $state(true);
+
+	onDestroy(() => {
+		if (pollInterval) clearInterval(pollInterval);
+	});
+
+	// Collapsible state per account (default expanded jika ada transaksi)
+	let collapsedAccounts = $state<Record<string, boolean>>({});
 
 	$effect(() => {
 		if (data) {
 			loading = false;
+			tgl1Input = data.filters.tgl1;
+			tgl2Input = data.filters.tgl2;
 			acc1Input = data.filters.acc1;
 			acc2Input = data.filters.acc2;
 		}
@@ -136,8 +165,49 @@
 	// BULLMQ BACKGROUND QUEUE LOGIC
 	// ==========================================
 
-	async function startBullMQExport() {
+	function openExportModal() {
+		// Nilai default diambil dari apa yang sedang diinput/dipilih di halaman saat ini
+		exportTgl1 = tgl1Input || data.filters.tgl1;
+		exportTgl2 = tgl2Input || data.filters.tgl2;
+		exportAcc1 = acc1Input || data.filters.acc1;
+		exportAcc2 = acc2Input || data.filters.acc2;
+		exportCurr = data.filters.curr || 'IDR';
+		exportJu = data.filters.ju ?? 0;
+		exportLawanTransaksi = data.filters.lawantransaksi ?? 1;
+		exportHideEmpty = data.filters.hideEmpty ?? true;
+
+		// Reset state progress jika membuka modal baru
+		jobState = null;
+		currentJobId = null;
+		jobProgress = 0;
+		jobResult = null;
+		jobError = null;
 		showQueueModal = true;
+	}
+
+	function setExportMonth(offsetMonths = 0) {
+		const now = new Date();
+		const targetDate = new Date(now.getFullYear(), now.getMonth() + offsetMonths, 1);
+		const y = targetDate.getFullYear();
+		const m = targetDate.getMonth();
+		const lastDay = new Date(y, m + 1, 0).getDate();
+
+		const pad = (n: number) => String(n).padStart(2, '0');
+		exportTgl1 = `${y}-${pad(m + 1)}-01`;
+		exportTgl2 = `${y}-${pad(m + 1)}-${pad(lastDay)}`;
+	}
+
+	function setExportPreset(a1: string, a2: string) {
+		exportAcc1 = a1;
+		exportAcc2 = a2;
+	}
+
+	async function startBullMQExport() {
+		if (!exportTgl1 || !exportTgl2) {
+			toast.error('Validasi Gagal', 'Tanggal awal dan akhir periode export wajib diisi.');
+			return;
+		}
+
 		queueLoading = true;
 		jobState = 'waiting';
 		jobProgress = 5;
@@ -149,14 +219,14 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					tgl1: data.filters.tgl1,
-					tgl2: data.filters.tgl2,
-					acc1: data.filters.acc1,
-					acc2: data.filters.acc2,
-					curr: data.filters.curr,
-					ju: data.filters.ju,
-					lawantransaksi: data.filters.lawantransaksi,
-					hideEmpty: data.filters.hideEmpty
+					tgl1: exportTgl1,
+					tgl2: exportTgl2,
+					acc1: exportAcc1,
+					acc2: exportAcc2,
+					curr: exportCurr,
+					ju: exportJu,
+					lawantransaksi: exportLawanTransaksi,
+					hideEmpty: exportHideEmpty
 				})
 			});
 
@@ -231,9 +301,9 @@
 				<Button
 					type="button"
 					variant="default"
-					onclick={startBullMQExport}
+					onclick={openExportModal}
 					class="h-9 border-[3px] font-black uppercase tracking-wide brutal-shadow-sm text-xs cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90"
-					title="Gunakan antrian BullMQ di background worker — cocok untuk rentang tanggal/akun panjang tanpa risiko timeout HTTP"
+					title="Buka form parameter export BullMQ untuk memilih tanggal dan akun secara bebas"
 				>
 					<Sparkles class="size-4 mr-1.5" />
 					Export via BullMQ (Anti-Timeout)
@@ -397,7 +467,7 @@
 					type="date"
 					id="tgl1"
 					name="tgl1"
-					value={data.filters.tgl1}
+					bind:value={tgl1Input}
 					class="bg-card border-border h-11 w-full rounded-lg border-[3px] px-3 text-sm font-bold brutal-shadow-sm"
 				/>
 			</div>
@@ -409,7 +479,7 @@
 					type="date"
 					id="tgl2"
 					name="tgl2"
-					value={data.filters.tgl2}
+					bind:value={tgl2Input}
 					class="bg-card border-border h-11 w-full rounded-lg border-[3px] px-3 text-sm font-bold brutal-shadow-sm"
 				/>
 			</div>
@@ -760,7 +830,7 @@
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200"
 	>
 		<div
-			class="bg-card w-full max-w-md rounded-2xl border-[3px] border-border p-6 brutal-shadow-lg space-y-5"
+			class="bg-card w-full max-w-lg rounded-2xl border-[3px] border-border p-6 brutal-shadow-lg space-y-5 max-h-[90vh] overflow-y-auto"
 		>
 			<!-- Header Modal -->
 			<div class="flex items-center justify-between pb-3 border-b-2 border-border/40">
@@ -769,8 +839,8 @@
 						<Sparkles class="size-4" />
 					</div>
 					<div>
-						<h3 class="font-black text-base uppercase text-foreground">Background Worker (BullMQ)</h3>
-						<p class="text-[11px] font-bold text-muted-foreground">Proses export file Excel di antrian</p>
+						<h3 class="font-black text-base uppercase text-foreground">Export Background BullMQ</h3>
+						<p class="text-[11px] font-bold text-muted-foreground">Proses export file Excel di antrian worker (Bebas Timeout)</p>
 					</div>
 				</div>
 				<button
@@ -782,93 +852,273 @@
 				</button>
 			</div>
 
-			<!-- Informasi Job -->
-			<div class="bg-muted/50 rounded-xl border-2 border-border/60 p-3.5 space-y-2 text-xs">
-				<div class="flex justify-between">
-					<span class="text-muted-foreground font-bold">Laporan:</span>
-					<span class="font-black uppercase">Buku Besar Pembantu</span>
-				</div>
-				<div class="flex justify-between">
-					<span class="text-muted-foreground font-bold">Periode:</span>
-					<span class="font-black font-mono">{formatDate(data.filters.tgl1)} s/d {formatDate(data.filters.tgl2)}</span>
-				</div>
-				<div class="flex justify-between">
-					<span class="text-muted-foreground font-bold">Rentang Akun:</span>
-					<span class="font-black font-mono">{data.filters.acc1} s/d {data.filters.acc2}</span>
-				</div>
-				{#if currentJobId}
-					<div class="flex justify-between">
-						<span class="text-muted-foreground font-bold">ID Pekerjaan BullMQ:</span>
-						<span class="font-black font-mono text-primary">#{currentJobId}</span>
+			{#if jobState === null}
+				<!-- TAHAP 1: FORM PEMILIHAN TANGGAL & PARAMETER EXPORT -->
+				<div class="space-y-4 text-xs">
+					<!-- Pilihan Periode Tanggal -->
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<Label class="font-black uppercase text-xs">Periode Tanggal Export</Label>
+							<div class="flex items-center gap-1">
+								<button
+									type="button"
+									onclick={() => setExportMonth(0)}
+									class="px-2 py-0.5 rounded border-2 border-border bg-muted/60 hover:bg-primary hover:text-primary-foreground font-mono text-[10px] font-bold cursor-pointer transition-colors"
+								>
+									Bulan Ini
+								</button>
+								<button
+									type="button"
+									onclick={() => setExportMonth(-1)}
+									class="px-2 py-0.5 rounded border-2 border-border bg-muted/60 hover:bg-primary hover:text-primary-foreground font-mono text-[10px] font-bold cursor-pointer transition-colors"
+								>
+									Bulan Lalu
+								</button>
+							</div>
+						</div>
+						<div class="grid grid-cols-2 gap-2.5">
+							<div class="space-y-1">
+								<span class="text-[10px] font-bold text-muted-foreground">Dari Tanggal:</span>
+								<input
+									type="date"
+									bind:value={exportTgl1}
+									class="bg-card border-border h-10 w-full rounded-lg border-2 px-3 text-xs font-bold brutal-shadow-sm"
+								/>
+							</div>
+							<div class="space-y-1">
+								<span class="text-[10px] font-bold text-muted-foreground">Sampai Tanggal:</span>
+								<input
+									type="date"
+									bind:value={exportTgl2}
+									class="bg-card border-border h-10 w-full rounded-lg border-2 px-3 text-xs font-bold brutal-shadow-sm"
+								/>
+							</div>
+						</div>
 					</div>
-				{/if}
-				<div class="flex justify-between items-center">
-					<span class="text-muted-foreground font-bold">Status:</span>
-					<Badge
-						variant={jobState === 'completed' ? 'default' : jobState === 'failed' ? 'error' : 'secondary'}
-						class="font-mono uppercase text-[10px]"
-					>
-						{jobState || 'MENUNGGU...'}
-					</Badge>
-				</div>
-			</div>
 
-			<!-- Progress Bar -->
-			<div class="space-y-2">
-				<div class="flex justify-between text-xs font-black">
-					<span>Progres Pemrosesan</span>
-					<span class="font-mono">{jobProgress}%</span>
-				</div>
-				<div class="h-3 w-full rounded-full border-2 border-border bg-muted overflow-hidden">
-					<div
-						class="h-full bg-primary transition-all duration-300"
-						style="width: {jobProgress}%"
-					></div>
-				</div>
-			</div>
+					<!-- Pilihan Rentang Akun -->
+					<div class="space-y-2 pt-2 border-t border-border/40">
+						<div class="flex items-center justify-between">
+							<Label class="font-black uppercase text-xs">Rentang Akun (COA)</Label>
+							<span class="text-[10px] text-muted-foreground font-bold">Pilih atau gunakan preset</span>
+						</div>
 
-			<!-- Pesan Status / Error -->
-			{#if jobState === 'failed'}
-				<Alert variant="error" title="Gagal Memproses">
-					{jobError || 'Worker mengalami kendala saat memproses laporan.'}
-				</Alert>
-			{:else if jobState === 'completed' && jobResult}
-				<div class="bg-emerald-500/10 border-2 border-emerald-500/30 text-emerald-800 dark:text-emerald-300 p-4 rounded-xl text-xs space-y-2">
-					<div class="flex items-center gap-2 font-black">
-						<CheckCircle2 class="size-4" />
-						<span>Berkas Excel Berhasil Dibuat!</span>
+						<!-- Quick Presets -->
+						<div class="flex flex-wrap gap-1">
+							{#each ACCOUNT_PRESETS as p}
+								<button
+									type="button"
+									onclick={() => setExportPreset(p.a1, p.a2)}
+									class="px-2 py-0.5 rounded border-2 border-border text-[10px] font-bold transition-colors cursor-pointer {exportAcc1 === p.a1 && exportAcc2 === p.a2 ? 'bg-primary text-primary-foreground font-black' : 'bg-muted/50 hover:bg-muted'}"
+								>
+									{p.label}
+								</button>
+							{/each}
+						</div>
+
+						<div class="grid grid-cols-2 gap-2.5 pt-1">
+							<div class="space-y-1">
+								<span class="text-[10px] font-bold text-muted-foreground">Dari Akun (Acc1):</span>
+								<Combobox
+									id="exportAcc1"
+									name="exportAcc1"
+									bind:value={exportAcc1}
+									options={coaOptions}
+									placeholder="1101"
+									allowCustom={true}
+								/>
+							</div>
+							<div class="space-y-1">
+								<span class="text-[10px] font-bold text-muted-foreground">Sampai Akun (Acc2):</span>
+								<Combobox
+									id="exportAcc2"
+									name="exportAcc2"
+									bind:value={exportAcc2}
+									options={coaOptions}
+									placeholder="9999"
+									allowCustom={true}
+									dropdownClass="right-0 left-auto"
+								/>
+							</div>
+						</div>
 					</div>
-					<p class="font-medium text-[11px] leading-relaxed">
-						{jobResult.message}
-					</p>
+
+					<!-- Opsi Tambahan -->
+					<div class="space-y-2.5 pt-2 border-t border-border/40 bg-muted/30 p-3 rounded-xl border-2">
+						<span class="font-black uppercase text-[11px] text-foreground">Opsi Tambahan</span>
+
+						<div class="grid grid-cols-2 gap-2">
+							<div class="space-y-1">
+								<span class="text-[10px] font-bold text-muted-foreground">Mata Uang:</span>
+								<select
+									bind:value={exportCurr}
+									class="bg-card border-border h-9 w-full rounded-lg border-2 px-2 text-xs font-bold uppercase cursor-pointer"
+								>
+									<option value="IDR">IDR</option>
+									<option value="USD">USD</option>
+									<option value="">Semua</option>
+								</select>
+							</div>
+							<div class="space-y-1">
+								<span class="text-[10px] font-bold text-muted-foreground">Tipe Jurnal:</span>
+								<select
+									bind:value={exportJu}
+									class="bg-card border-border h-9 w-full rounded-lg border-2 px-2 text-xs font-bold uppercase cursor-pointer"
+								>
+									<option value={0}>Semua</option>
+									<option value={1}>Hanya JU</option>
+								</select>
+							</div>
+						</div>
+
+						<div class="space-y-2 pt-1">
+							<label class="flex items-center gap-2 cursor-pointer select-none">
+								<input
+									type="checkbox"
+									bind:checked={exportLawanTransaksi}
+									class="size-4 rounded border-2 border-border text-primary cursor-pointer"
+								/>
+								<span class="font-bold text-xs">Tampilkan Lawan Transaksi COA</span>
+							</label>
+
+							<label class="flex items-center gap-2 cursor-pointer select-none">
+								<input
+									type="checkbox"
+									bind:checked={exportHideEmpty}
+									class="size-4 rounded border-2 border-border text-primary cursor-pointer"
+								/>
+								<span class="font-bold text-xs">Sembunyikan Akun Bersaldo 0 & Tanpa Mutasi</span>
+							</label>
+						</div>
+					</div>
+
+					<!-- Action Buttons Modal -->
+					<div class="flex items-center justify-end gap-2 pt-3 border-t-2 border-border/40">
+						<Button
+							type="button"
+							variant="secondary"
+							onclick={closeQueueModal}
+							class="h-10 border-[2px] font-bold text-xs uppercase"
+						>
+							Batal
+						</Button>
+						<Button
+							type="button"
+							variant="default"
+							onclick={startBullMQExport}
+							class="h-10 px-5 border-[3px] bg-primary text-primary-foreground font-black text-xs uppercase tracking-wide brutal-shadow-sm cursor-pointer hover:bg-primary/90"
+						>
+							<Sparkles class="size-4 mr-1.5" />
+							Mulai Export Background
+						</Button>
+					</div>
 				</div>
 			{:else}
-				<div class="flex items-center gap-2 text-xs text-muted-foreground justify-center py-2">
-					<RefreshCw class="size-4 animate-spin text-primary" />
-					<span class="font-bold">Sedang mengeksekusi Stored Procedure & menyusun file Excel...</span>
+				<!-- TAHAP 2: PROGRES PEMROSESAN / HASIL -->
+				<div class="space-y-4">
+					<!-- Informasi Job -->
+					<div class="bg-muted/50 rounded-xl border-2 border-border/60 p-3.5 space-y-2 text-xs">
+						<div class="flex justify-between">
+							<span class="text-muted-foreground font-bold">Laporan:</span>
+							<span class="font-black uppercase">Buku Besar Pembantu</span>
+						</div>
+						<div class="flex justify-between">
+							<span class="text-muted-foreground font-bold">Periode:</span>
+							<span class="font-black font-mono">{formatDate(exportTgl1)} s/d {formatDate(exportTgl2)}</span>
+						</div>
+						<div class="flex justify-between">
+							<span class="text-muted-foreground font-bold">Rentang Akun:</span>
+							<span class="font-black font-mono">{exportAcc1} s/d {exportAcc2}</span>
+						</div>
+						<div class="flex justify-between">
+							<span class="text-muted-foreground font-bold">Lawan Transaksi:</span>
+							<span class="font-bold">{exportLawanTransaksi ? 'Ya' : 'Tidak'}</span>
+						</div>
+						{#if currentJobId}
+							<div class="flex justify-between">
+								<span class="text-muted-foreground font-bold">ID Pekerjaan BullMQ:</span>
+								<span class="font-black font-mono text-primary">#{currentJobId}</span>
+							</div>
+						{/if}
+						<div class="flex justify-between items-center">
+							<span class="text-muted-foreground font-bold">Status:</span>
+							<Badge
+								variant={jobState === 'completed' ? 'default' : jobState === 'failed' ? 'error' : 'secondary'}
+								class="font-mono uppercase text-[10px]"
+							>
+								{jobState || 'MENUNGGU...'}
+							</Badge>
+						</div>
+					</div>
+
+					<!-- Progress Bar -->
+					<div class="space-y-2">
+						<div class="flex justify-between text-xs font-black">
+							<span>Progres Pemrosesan</span>
+							<span class="font-mono">{jobProgress}%</span>
+						</div>
+						<div class="h-3 w-full rounded-full border-2 border-border bg-muted overflow-hidden">
+							<div
+								class="h-full bg-primary transition-all duration-300"
+								style="width: {jobProgress}%"
+							></div>
+						</div>
+					</div>
+
+					<!-- Pesan Status / Error -->
+					{#if jobState === 'failed'}
+						<Alert variant="error" title="Gagal Memproses">
+							{jobError || 'Worker mengalami kendala saat memproses laporan.'}
+						</Alert>
+					{:else if jobState === 'completed' && jobResult}
+						<div class="bg-emerald-500/10 border-2 border-emerald-500/30 text-emerald-800 dark:text-emerald-300 p-4 rounded-xl text-xs space-y-2">
+							<div class="flex items-center gap-2 font-black">
+								<CheckCircle2 class="size-4" />
+								<span>Berkas Excel Berhasil Dibuat!</span>
+							</div>
+							<p class="font-medium text-[11px] leading-relaxed">
+								{jobResult.message}
+							</p>
+						</div>
+					{:else}
+						<div class="flex items-center gap-2 text-xs text-muted-foreground justify-center py-2">
+							<RefreshCw class="size-4 animate-spin text-primary" />
+							<span class="font-bold">Sedang mengeksekusi Stored Procedure & menyusun file Excel...</span>
+						</div>
+					{/if}
+
+					<!-- Action Buttons -->
+					<div class="flex items-center justify-end gap-2 pt-2 border-t-2 border-border/40">
+						{#if jobState === 'failed'}
+							<Button
+								type="button"
+								variant="default"
+								onclick={() => (jobState = null)}
+								class="h-10 border-[2px] font-bold text-xs uppercase"
+							>
+								Ubah Parameter & Coba Lagi
+							</Button>
+						{/if}
+						{#if jobState === 'completed' && currentJobId}
+							<a
+								href="/api/queue/buku-besar?jobId={currentJobId}&download=true"
+								class="h-10 px-5 inline-flex items-center justify-center rounded-lg border-[3px] bg-primary text-primary-foreground font-black text-xs uppercase tracking-wide brutal-shadow-sm hover:opacity-95"
+							>
+								<Download class="size-4 mr-2" />
+								Unduh Berkas Excel ({jobResult?.fileName || 'rpbbpembantul.xlsx'})
+							</a>
+						{/if}
+						<Button
+							type="button"
+							variant="secondary"
+							onclick={closeQueueModal}
+							class="h-10 border-[3px] font-bold text-xs uppercase"
+						>
+							Tutup
+						</Button>
+					</div>
 				</div>
 			{/if}
-
-			<!-- Action Buttons -->
-			<div class="flex items-center justify-end gap-2 pt-2 border-t-2 border-border/40">
-				{#if jobState === 'completed' && currentJobId}
-					<a
-						href="/api/queue/buku-besar?jobId={currentJobId}&download=true"
-						class="h-10 px-5 inline-flex items-center justify-center rounded-lg border-[3px] bg-primary text-primary-foreground font-black text-xs uppercase tracking-wide brutal-shadow-sm hover:opacity-95"
-					>
-						<Download class="size-4 mr-2" />
-						Unduh Berkas Excel ({jobResult?.fileName || 'rpbbpembantul.xlsx'})
-					</a>
-				{/if}
-				<Button
-					type="button"
-					variant="secondary"
-					onclick={closeQueueModal}
-					class="h-10 border-[3px] font-bold text-xs uppercase"
-				>
-					Tutup
-				</Button>
-			</div>
 		</div>
 	</div>
 {/if}
