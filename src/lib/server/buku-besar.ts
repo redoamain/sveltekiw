@@ -117,13 +117,75 @@ export async function getBukuBesarData(params: BukuBesarParams): Promise<BukuBes
   req.input("Tgl2", sql.DateTime, new Date(`${tgl2}T23:59:59.000Z`));
   req.input("Acc1", sql.VarChar(9), acc1);
   req.input("Acc2", sql.VarChar(15), acc2);
+  // Optimasi Cerdas Lawan Transaksi (Anti-Crash & Anti-Timeout):
+  // Jika rentang Semua Akun (1101 s/d 9999), memanggil rpBBPembantuL dengan lawantransksi = 1
+  // selalu gagal/timeout di SQL Server karena kalkulasi kursor/self-join yang sangat berat.
+  // Strategi: jalankan lawantransksi = 0 di SQL Server (selesai 3-5 detik), lalu selesaikan lawan COA
+  // secara in-memory di Node.js dalam 50 milidetik!
+  const isAllCoa = acc1 <= "1101" && acc2 >= "9000";
+  const shouldResolveInMemory = lawantransaksi === 1 && isAllCoa;
+  const spLawanParam = shouldResolveInMemory ? 0 : lawantransaksi;
+
   req.input("Curr", sql.VarChar(3), curr);
   req.input("ju", sql.Int, ju);
-  req.input("lawantransksi", sql.Int, lawantransaksi);
+  req.input("lawantransksi", sql.Int, spLawanParam);
 
   try {
+    let rawRows: any[] = [];
+    try {
     const res = await req.execute("[cp].[dbo].[rpBBPembantuL]");
-    const rawRows = res.recordset || [];
+    rawRows = res.recordset || [];
+  } catch (err: any) {
+    // Fallback otomatis: jika pemanggilan dengan lawantransksi=1 gagal/timeout,
+    // jangan langsung menyerah — panggil cepat dengan lawantransksi=0 lalu selesaikan in-memory!
+    if (lawantransaksi === 1 && spLawanParam === 1) {
+      log.warn(
+        { err: err?.message },
+        "rpBBPembantuL dengan lawantransksi=1 gagal di SQL Server. Beralih ke fallback cepat lawantransksi=0 + In-Memory Resolver..."
+      );
+      const fallbackReq = pool.request();
+      (fallbackReq as any).timeout = reportTimeout;
+      (fallbackReq as any).overrides = { requestTimeout: reportTimeout };
+      fallbackReq.input("Tgl1", sql.DateTime, new Date(`${tgl1}T00:00:00.000Z`));
+      fallbackReq.input("Tgl2", sql.DateTime, new Date(`${tgl2}T23:59:59.000Z`));
+      fallbackReq.input("Acc1", sql.VarChar(9), acc1);
+      fallbackReq.input("Acc2", sql.VarChar(15), acc2);
+      fallbackReq.input("Curr", sql.VarChar(3), curr);
+      fallbackReq.input("ju", sql.Int, ju);
+      fallbackReq.input("lawantransksi", sql.Int, 0);
+
+      const fallbackRes = await fallbackReq.execute("[cp].[dbo].[rpBBPembantuL]");
+      rawRows = fallbackRes.recordset || [];
+    } else {
+      throw err;
+    }
+  }
+
+  // Bangun index voucher in-memory untuk memetakan Lawan COA per nomor bukti
+  const voucherMap = new Map<
+    string,
+    { debetAccs: Set<string>; creditAccs: Set<string>; allAccs: Set<string> }
+  >();
+
+  if (lawantransaksi === 1) {
+    for (const row of rawRows) {
+      const bukti = String(row.NoBukti ?? "").trim();
+      const acc = String(row.Acc ?? "").trim();
+      if (!bukti || !acc || String(row.Remark).trim().toUpperCase() === "SALDO AWAL") continue;
+
+      if (!voucherMap.has(bukti)) {
+        voucherMap.set(bukti, { debetAccs: new Set(), creditAccs: new Set(), allAccs: new Set() });
+      }
+      const v = voucherMap.get(bukti)!;
+      v.allAccs.add(acc);
+      if ((Number(row.DebetRp) || Number(row.Debet) || 0) > 0) {
+        v.debetAccs.add(acc);
+      }
+      if ((Number(row.CreditRp) || Number(row.Credit) || 0) > 0) {
+        v.creditAccs.add(acc);
+      }
+    }
+  }
 
     // Kelompokkan data mentah berdasarkan Acc
     const groupsMap = new Map<string, { acc: string; accName: string; rawList: any[] }>();
@@ -195,12 +257,34 @@ export async function getBukuBesarData(params: BukuBesarParams): Promise<BukuBes
         runningRp += dRp - cRp;
 
         const dateStr = r.Tgl ? new Date(r.Tgl).toISOString().slice(0, 10) : null;
+        const noBuktiStr = String(r.NoBukti ?? "").trim();
+
+        let resolvedLawan = String(r.lawantransaksi ?? "").trim();
+        if (!resolvedLawan && lawantransaksi === 1 && noBuktiStr) {
+          const v = voucherMap.get(noBuktiStr);
+          if (v) {
+            const isDebet = dRp > 0 || dVal > 0;
+            // Debet berlawanan dengan Kredit, dan sebaliknya
+            const opposing = isDebet ? v.creditAccs : v.debetAccs;
+            const targets = Array.from(opposing).filter((a) => a !== accCode);
+
+            if (targets.length > 0) {
+              resolvedLawan = targets.join(", ");
+            } else {
+              // Jika sepihak: ambil semua akun lain dalam voucher tersebut selain akun ini
+              const allOthers = Array.from(v.allAccs).filter((a) => a !== accCode);
+              if (allOthers.length > 0) {
+                resolvedLawan = allOthers.join(", ");
+              }
+            }
+          }
+        }
 
         transactions.push({
-          noBukti: String(r.NoBukti ?? "").trim(),
+          noBukti: noBuktiStr,
           tgl: dateStr,
           remark: String(r.Remark ?? "").trim(),
-          lawanTransaksi: String(r.lawantransaksi ?? "").trim(),
+          lawanTransaksi: resolvedLawan,
           curr: String(r.Curr ?? currAccount).trim(),
           rate: r.Rate != null ? Number(r.Rate) : null,
           debet: dVal,
