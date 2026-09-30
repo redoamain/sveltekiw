@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" width="320" height="80" role="img" aria-label="PT. CITI PLUMB">
+  <defs>
+    <linearGradient id="cpBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7" />
+      <stop offset="100%" stop-color="#1E3A8A" />
+    </linearGradient>
+    <linearGradient id="cpAccentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+  </defs>
+
+  <!-- Emblem Icon: Stylized Plumbing Fitting / Valve / Drop -->
+  <g transform="translate(10, 10)">
+    <!-- Outer Brutal/Precision Border -->
+    <rect x="0" y="0" width="60" height="60" rx="10" fill="url(#cpBlueGrad)" stroke="#0F0F0F" stroke-width="2.5" />
+    
+    <!-- Plumbing Pipe & Valve Concept -->
+    <!-- Horizontal Pipe -->
+    <rect x="10" y="24" width="40" height="12" rx="2" fill="#FFFFFF" stroke="#0F0F0F" stroke-width="1.5" />
+    <!-- Vertical Fitting -->
+    <rect x="23" y="12" width="14" height="36" rx="2" fill="#E0F2FE" stroke="#0F0F0F" stroke-width="1.5" />
+    <!-- Valve Wheel / Core -->
+    <circle cx="30" cy="30" r="7" fill="url(#cpAccentGrad)" stroke="#0F0F0F" stroke-width="1.5" />
+    <circle cx="30" cy="30" r="3" fill="#FFFFFF" />
+    <!-- Water Drop Top -->
+    <path d="M 30,14 C 27,19 25,21 25,23 C 25,25.7 27.2,28 30,28 C 32.8,28 35,25.7 35,23 C 35,21 33,19 30,14 Z" fill="#38BDF8" opacity="0.9" />
+  </g>
+
+  <!-- Typography -->
+  <!-- Main Brand Name -->
+  <text x="82" y="38" font-family="'Space Grotesk', 'DM Sans', system-ui, sans-serif" font-weight="900" font-size="28" fill="#0F0F0F" letter-spacing="-0.5">
+    CITI PLUMB
+  </text>
+  
+  <!-- PT Prefix Badge -->
+  <rect x="82" y="45" width="28" height="15" rx="3" fill="#0F0F0F" />
+  <text x="96" y="56" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-weight="800" font-size="9" fill="#FFFFFF" letter-spacing="1">
+    PT
+  </text>
+
+  <!-- Subtitle / Industry Descriptor -->
+  <text x="116" y="56" font-family="'DM Sans', system-ui, sans-serif" font-weight="700" font-size="9.5" fill="#4B5563" letter-spacing="0.5">
+    MANUFACTURER OF SANITARY WARE
+  </text>
+  
+  <!-- Subtle separator line -->
+  <rect x="82" y="64" width="220" height="2" rx="1" fill="#0284C7" />
+</svg>
