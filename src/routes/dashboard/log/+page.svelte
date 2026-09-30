@@ -12,8 +12,10 @@
 		TableHead,
 		TableBody,
 		TableCell,
-		LoadingOverlay
+		LoadingOverlay,
+		Alert
 	} from '$lib/components';
+	import { toast } from '$lib/toast.svelte';
 	import { Search, Download, History } from '@lucide/svelte';
 
 	let { data } = $props();
@@ -137,15 +139,9 @@
 	</form>
 
 	{#if data.error}
-		<div
-			class="bg-error text-error-foreground flex items-center gap-2 rounded-xl border-[3px] border-border px-4 py-3 text-sm font-black uppercase tracking-wide brutal-shadow"
-			role="alert"
-		>
-			<span class="bg-card text-error flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border text-xs font-black">
-				!
-			</span>
-			<span>{data.error}</span>
-		</div>
+		<Alert variant="error" title="Terjadi Kesalahan" dismissible>
+			{data.error}
+		</Alert>
 	{/if}
 
 	<!-- Table wrapper -->
@@ -164,6 +160,7 @@
 					onsubmit={() => {
 						loading = true;
 						loadingMsg = 'Menyiapkan Excel...';
+						toast.info('Export Excel', selected.length > 0 ? `Mengekspor ${selected.length} log terpilih...` : 'Mengekspor data log transaksi...');
 						setTimeout(() => (loading = false), 3000);
 					}}
 					class="inline-flex"

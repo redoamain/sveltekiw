@@ -29,6 +29,8 @@
 		Cpu
 	} from '@lucide/svelte';
 
+	import { resolveUserRole, hasMenuAccess } from '$lib/permissions';
+
 	let { data } = $props();
 
 	const fmt = (n: number) => (Number(n) || 0).toLocaleString('id-ID');
@@ -53,20 +55,47 @@
 		}
 	}
 
+	let resolvedRole = $derived(resolveUserRole(data.user));
 	let userName = $derived(
 		(data.user?.UserName as string | undefined) ??
 		(data.user?.username as string | undefined) ??
 		'Pengguna'
 	);
-	let userDept = $derived(
-		(data.user?.Dept as string | undefined) ??
-		(data.user?.dept as string | undefined) ??
-		'PPIC / Inventory'
-	);
+	let userDept = $derived(resolvedRole.roleLabel);
 	let isBackup = $derived(data.dbSource === 'backup');
 
 	let completionRate = $derived(
 		data.spkTotal > 0 ? ((data.spkCompleted / data.spkTotal) * 100).toFixed(1) : '0'
+	);
+
+	let primaryShortcut = $derived.by(() => {
+		if (hasMenuAccess('/dashboard/ppic', data.user)) {
+			return { href: '/dashboard/ppic', label: 'Hitung PPIC', icon: ClipboardList };
+		}
+		if (hasMenuAccess('/dashboard/input-produksi', data.user)) {
+			return { href: '/dashboard/input-produksi', label: 'Input Produksi', icon: Factory };
+		}
+		if (hasMenuAccess('/dashboard/input-lbm', data.user)) {
+			return { href: '/dashboard/input-lbm', label: 'Input LBM Gudang', icon: ArrowLeftRight };
+		}
+		if (hasMenuAccess('/dashboard/monitoring-pembelian', data.user)) {
+			return { href: '/dashboard/monitoring-pembelian', label: 'Pembelian', icon: ShoppingCart };
+		}
+		return { href: '/dashboard/kartu-stock', label: 'Kartu Stock', icon: Layers };
+	});
+
+	const candidateShortcuts = [
+		{ href: '/dashboard/monitoring-produksi', label: 'Produksi', icon: Factory, color: 'text-secondary' },
+		{ href: '/dashboard/monitoring-pembelian', label: 'Pembelian', icon: ShoppingCart, color: 'text-warning' },
+		{ href: '/dashboard/kartu-stock', label: 'Kartu Stock', icon: Layers, color: 'text-primary' },
+		{ href: '/dashboard/mutasi-gudang', label: 'Mutasi', icon: ArrowLeftRight, color: 'text-muted-foreground' },
+		{ href: '/dashboard/master-barang', label: 'Master', icon: Package, color: 'text-success' }
+	];
+
+	let visibleShortcuts = $derived(
+		candidateShortcuts
+			.filter((s) => hasMenuAccess(s.href, data.user) && s.href !== primaryShortcut.href)
+			.slice(0, 2)
 	);
 </script>
 
@@ -138,30 +167,31 @@
 
 			<!-- Right: Quick Shortcut Actions -->
 			<div class="flex flex-wrap items-center gap-2.5 lg:flex-col lg:items-end">
-				<a
-					href="/dashboard/ppic"
-					class="inline-flex items-center gap-2 rounded-xl border-[3px] border-border bg-primary px-4 py-2.5 font-mono text-xs font-black uppercase tracking-wider text-primary-foreground brutal-shadow-sm transition-all hover:-translate-x-px hover:-translate-y-px hover:bg-primary/90 cursor-pointer"
-				>
-					<ClipboardList class="size-4" />
-					Hitung PPIC
-					<ArrowRight class="size-3.5" />
-				</a>
-				<div class="flex items-center gap-2">
+				{#if primaryShortcut}
+					{@const PrimaryIcon = primaryShortcut.icon}
 					<a
-						href="/dashboard/monitoring-produksi"
-						class="inline-flex items-center gap-1.5 rounded-xl border-2 border-border bg-card px-3 py-2 font-mono text-xs font-black uppercase text-foreground brutal-shadow-xs transition-all hover:bg-muted cursor-pointer"
+						href={primaryShortcut.href}
+						class="inline-flex items-center gap-2 rounded-xl border-[3px] border-border bg-primary px-4 py-2.5 font-mono text-xs font-black uppercase tracking-wider text-primary-foreground brutal-shadow-sm transition-all hover:-translate-x-px hover:-translate-y-px hover:bg-primary/90 cursor-pointer"
 					>
-						<Factory class="size-3.5 text-secondary" />
-						Produksi
+						<PrimaryIcon class="size-4" />
+						{primaryShortcut.label}
+						<ArrowRight class="size-3.5" />
 					</a>
-					<a
-						href="/dashboard/monitoring-pembelian"
-						class="inline-flex items-center gap-1.5 rounded-xl border-2 border-border bg-card px-3 py-2 font-mono text-xs font-black uppercase text-foreground brutal-shadow-xs transition-all hover:bg-muted cursor-pointer"
-					>
-						<ShoppingCart class="size-3.5 text-warning" />
-						Pembelian
-					</a>
-				</div>
+				{/if}
+				{#if visibleShortcuts.length > 0}
+					<div class="flex items-center gap-2">
+						{#each visibleShortcuts as sc}
+							{@const ScIcon = sc.icon}
+							<a
+								href={sc.href}
+								class="inline-flex items-center gap-1.5 rounded-xl border-2 border-border bg-card px-3 py-2 font-mono text-xs font-black uppercase text-foreground brutal-shadow-xs transition-all hover:bg-muted cursor-pointer"
+							>
+								<ScIcon class="size-3.5 {sc.color}" />
+								{sc.label}
+							</a>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		</div>
 	</div>

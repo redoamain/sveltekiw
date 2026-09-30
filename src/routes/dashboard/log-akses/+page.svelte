@@ -10,6 +10,7 @@
 		TableCell,
 		Pagination
 	} from '$lib/components';
+	import { toast } from '$lib/toast.svelte';
 	import {
 		UserCheck,
 		Users,
@@ -102,6 +103,7 @@
 			<div class="flex items-center gap-2">
 				<a
 					href={exportUrl()}
+					onclick={() => toast.info('Export Excel', 'Mengunduh rekap log akses user...')}
 					class="inline-flex items-center gap-1.5 rounded-xl border-[3px] border-border bg-success px-4 py-2 font-mono text-xs font-black uppercase text-success-foreground brutal-shadow-sm transition-all hover:-translate-x-px hover:-translate-y-px cursor-pointer"
 				>
 					<Download class="size-4" />
