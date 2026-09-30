@@ -6,6 +6,7 @@
 import sql from "mssql";
 import { getPoolLogin, getPoolBackupLogin } from "@/lib/db";
 import { log } from "@/lib/db";
+import { resolveUserRole } from "./permissions";
 
 export const AUTH_COOKIE = "pp_session";
 export const DB_SOURCE_COOKIE = "pp_db_source";
@@ -14,7 +15,12 @@ export const AUTH_MAX_AGE = 60 * 60 * 8; // 8 jam
 export interface AuthUser {
   UserName: string;
   Nama?: string;
+  Bagian?: string;
+  role?: string;
   Dept?: string;
+  isSuperAdmin?: boolean;
+  roleLabel?: string;
+  GroupID?: string;
   // field lain dari taUser disimpan apa adanya (tanpa Password)
   [k: string]: unknown;
 }
@@ -35,12 +41,29 @@ export async function verifyCredentials(
     .input("UserName", sql.VarChar, u)
     .query("SELECT * FROM [MenuCP].[dbo].[taUser] WHERE UserName = @UserName");
 
-  const row = result.recordset[0] as (AuthUser & { Password?: string }) | undefined;
+  const row = result.recordset[0] as (Record<string, unknown> & { Password?: string; Bagian?: string; bagian?: string; GroupID?: string }) | undefined;
   if (!row) return null;
   if (row.Password !== p) return null;
 
   const { Password: _pw, ...safe } = row;
-  return safe as AuthUser;
+  const resolved = resolveUserRole({
+    ...safe,
+    UserName: String(row.UserName || u),
+    Bagian: String(row.Bagian ?? row.bagian ?? safe.Dept ?? "").trim().toUpperCase(),
+    GroupID: String(row.GroupID ?? "").trim(),
+  });
+
+  const user: AuthUser = {
+    ...safe,
+    UserName: String(row.UserName || u),
+    Bagian: resolved.role,
+    role: resolved.role,
+    Dept: resolved.role,
+    roleLabel: resolved.roleLabel,
+    isSuperAdmin: resolved.isSuperAdmin,
+  };
+
+  return user;
 }
 
 // Encode/decode cookie — base64url JSON (tanpa signature, internal LAN)
@@ -58,6 +81,14 @@ export function decodeSession(value: string | undefined | null): AuthUser | null
     if (!obj?.UserName) return null;
     if (obj._t && Date.now() - obj._t > AUTH_MAX_AGE * 1000) return null;
     const { _t: _ignored, _sid: _sidIgnored, ...user } = obj as AuthUser & { _t?: number; _sid?: string };
+
+    const resolved = resolveUserRole(user);
+    user.Bagian = resolved.role;
+    user.role = resolved.role;
+    user.Dept = resolved.role;
+    user.roleLabel = resolved.roleLabel;
+    user.isSuperAdmin = resolved.isSuperAdmin;
+
     return user as AuthUser;
   } catch {
     return null;

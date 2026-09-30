@@ -1,25 +1,11 @@
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, ServerInit } from '@sveltejs/kit';
 import { redirect } from '@sveltejs/kit';
 import { AUTH_COOKIE, DB_SOURCE_COOKIE, decodeSession, getSessionIdFromCookie } from '$lib/auth';
 import { isSessionValid, touchSession } from '$lib/session';
 import { dbContext } from '$lib/db';
 import { logUserActivity } from '$lib/server/access-log';
-
-const MENU_NAME_MAP: Record<string, string> = {
-	'/dashboard': 'Dashboard',
-	'/dashboard/monitoring-produksi': 'Monitoring Produksi',
-	'/dashboard/monitoring-pembelian': 'Monitoring Pembelian',
-	'/dashboard/ppic': 'Production Plan (PPIC)',
-	'/dashboard/spk': 'Surat Perintah Kerja (SPK)',
-	'/dashboard/master-barang': 'Master Data Barang',
-	'/dashboard/lbm': 'Gudang - LBM',
-	'/dashboard/lbk': 'Gudang - LBK',
-	'/dashboard/retur-produksi': 'Gudang - Retur Produksi',
-	'/dashboard/mutasi-gudang': 'Gudang - Mutasi Gudang',
-	'/dashboard/pemasukan-gudang': 'Gudang - Pemasukan Gudang',
-	'/dashboard/log': 'Log Transaksi ERP',
-	'/dashboard/log-akses': 'Log Akses User'
-};
+import { initWorkers, closeWorkers, addAuditLogJob } from '$lib/server/queue';
+import { hasMenuAccess, MENU_NAME_MAP } from '$lib/permissions';
 
 const PUBLIC_PATHS = new Set([
 	'/login',
@@ -46,6 +32,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const { pathname } = event.url;
 	const method = event.request.method;
 
+	// Populate user session and dbSource from cookies
+	const token = event.cookies.get(AUTH_COOKIE);
+	const user = token ? decodeSession(token) : null;
+	if (user) {
+		event.locals.user = user;
+	}
+	const dbSourceCookie = event.cookies.get(DB_SOURCE_COOKIE);
+	event.locals.dbSource = dbSourceCookie === 'backup' ? 'backup' : 'live';
+
 	// CORS untuk /api/*
 	if (pathname.startsWith('/api/')) {
 		if (method === 'OPTIONS') {
@@ -59,20 +54,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 			});
 		}
 
-		const dbSourceCookie = event.cookies.get(DB_SOURCE_COOKIE);
-		const useBackup = dbSourceCookie === 'backup';
+		const useBackup = event.locals.dbSource === 'backup';
 		return dbContext.run({ useBackup }, () => resolve(event));
 	}
 
 	// Halaman public -> jika sudah login dan buka /login, redirect ke /dashboard
 	if (isPublic(pathname)) {
 		if (pathname === '/login' || pathname === '/auth/login') {
-			const token = event.cookies.get(AUTH_COOKIE);
-			if (token) {
-				const user = decodeSession(token);
-				if (user) {
-					throw redirect(303, '/dashboard');
-				}
+			if (user) {
+				throw redirect(303, '/dashboard');
 			}
 		}
 		return resolve(event);
@@ -81,15 +71,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Halaman terproteksi: / dan /dashboard/*
 	const needsAuth = pathname === '/' || pathname.startsWith('/dashboard');
 	if (needsAuth) {
-		const token = event.cookies.get(AUTH_COOKIE);
-		const user = decodeSession(token);
 		if (!user) {
 			const nextParam = pathname + event.url.search;
 			throw redirect(303, `/login?next=${encodeURIComponent(nextParam)}`);
 		}
 
 		// Single-session check
-		const sid = getSessionIdFromCookie(token);
+		const sid = token ? getSessionIdFromCookie(token) : null;
 		if (sid) {
 			const valid = await isSessionValid(String(user.UserName), sid);
 			if (!valid) {
@@ -100,13 +88,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 			touchSession(String(user.UserName)).catch(() => {});
 		}
 
-		event.locals.user = user;
-		const dbSourceCookie = event.cookies.get(DB_SOURCE_COOKIE);
-		event.locals.dbSource = dbSourceCookie === 'backup' ? 'backup' : 'live';
-
 		// Log aktivitas akses menu secara non-blocking
 		if (pathname.startsWith('/dashboard')) {
 			const cleanPath = pathname.replace(/\/$/, '') || '/dashboard';
+
+			// Proteksi otorisasi menu berdasarkan role pengguna
+			if (!hasMenuAccess(cleanPath, user)) {
+				throw redirect(303, `/dashboard?error=unauthorized&from=${encodeURIComponent(cleanPath)}`);
+			}
+
 			const menuName = MENU_NAME_MAP[cleanPath] || `Menu: ${cleanPath}`;
 			const ip =
 				event.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
@@ -117,7 +107,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 			const action = method === 'POST' ? 'EXECUTE_ACTION' : 'VIEW_PAGE';
 			const details = search ? `Query: ${search.slice(0, 200)}` : null;
 
-			logUserActivity({
+			const logData = {
 				userName: String(user.UserName),
 				action,
 				menuName,
@@ -126,7 +116,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 				ip,
 				userAgent,
 				details
-			}).catch(() => {});
+			};
+
+			// Alihkan logging aktivitas ke antrian BullMQ (auditQueue) agar request HTTP tidak terhambat
+			addAuditLogJob(logData).catch(() => {
+				// Fallback aman langsung ke file jika antrian Redis bermasalah
+				logUserActivity(logData).catch(() => {});
+			});
 		}
 
 		const useBackup = event.locals.dbSource === 'backup';
@@ -135,3 +131,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	return resolve(event);
 };
+
+export const init: ServerInit = async () => {
+	await initWorkers();
+
+	const handleExit = async () => {
+		await closeWorkers();
+	};
+
+	process.on('SIGINT', handleExit);
+	process.on('SIGTERM', handleExit);
+};
+

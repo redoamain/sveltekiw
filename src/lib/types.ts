@@ -1,10 +1,14 @@
 // Types shared untuk production planning. Nama field mengikuti store procedure.
+export type PlanningSourceType = 'spk' | 'so';
+
 export interface ProductionOrder {
   No_SPK: string;
   Tanggal_Order?: string;
   Nama_PO?: string;
   Kode_Barang: string;
   QTY: number;
+  Nama_Barang?: string;
+  sourceType?: PlanningSourceType;
 }
 
 export interface BomItem {
