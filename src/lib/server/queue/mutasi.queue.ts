@@ -1,6 +1,7 @@
 import { Queue } from 'bullmq';
 import { redisConnectionOptions } from './connection';
 import type { CreateMutasiPayload } from '$lib/server/input-mutasi';
+import { log } from '$lib/db';
 
 export const MUTASI_QUEUE_NAME = 'kiw-mutasi-queue';
 
@@ -52,6 +53,10 @@ export function getMutasiQueue(): Queue<MutasiJobData, MutasiJobResult> {
 					age: 7 * 24 * 3600 // Simpan log gagal 7 hari
 				}
 			}
+		});
+
+		mutasiQueueInstance.on('error', (err) => {
+			log.warn({ err: err?.message }, '[BullMQ] Mutasi queue error');
 		});
 	}
 	return mutasiQueueInstance;

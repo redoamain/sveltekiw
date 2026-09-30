@@ -1,5 +1,6 @@
 import { Queue } from 'bullmq';
 import { redisConnectionOptions } from './connection';
+import { log } from '$lib/db';
 
 export const AUDIT_QUEUE_NAME = 'kiw-audit-queue';
 
@@ -26,6 +27,10 @@ export function getAuditQueue(): Queue<AuditJobData> {
 				removeOnComplete: { count: 1000, age: 24 * 3600 },
 				removeOnFail: { count: 2000, age: 7 * 24 * 3600 }
 			}
+		});
+
+		auditQueueInstance.on('error', (err) => {
+			log.warn({ err: err?.message }, '[BullMQ] Audit queue error');
 		});
 	}
 	return auditQueueInstance;

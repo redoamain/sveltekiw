@@ -1,6 +1,7 @@
 import { Queue } from 'bullmq';
 import { redisConnectionOptions } from './connection';
 import type { BukuBesarParams } from '$lib/server/buku-besar';
+import { log } from '$lib/db';
 
 export const BUKU_BESAR_QUEUE_NAME = 'kiw-buku-besar-queue';
 
@@ -45,6 +46,10 @@ export function getBukuBesarQueue(): Queue<BukuBesarExportJobData, BukuBesarJobR
 				}
 			}
 		);
+
+		bukuBesarQueueInstance.on('error', (err) => {
+			log.warn({ err: err?.message }, '[BullMQ] Buku Besar queue error');
+		});
 	}
 	return bukuBesarQueueInstance;
 }

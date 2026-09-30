@@ -20,6 +20,10 @@ export function getMaintenanceQueue(): Queue<MaintenanceJobData> {
 				removeOnFail: { count: 100, age: 7 * 24 * 3600 }
 			}
 		});
+
+		maintenanceQueueInstance.on('error', (err) => {
+			log.warn({ err: err?.message }, '[BullMQ] Maintenance queue error');
+		});
 	}
 	return maintenanceQueueInstance;
 }

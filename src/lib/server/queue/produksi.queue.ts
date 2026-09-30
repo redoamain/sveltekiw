@@ -1,6 +1,7 @@
 import { Queue } from 'bullmq';
 import { redisConnectionOptions } from './connection';
 import type { CreateProductionPayload } from '$lib/server/input-produksi';
+import { log } from '$lib/db';
 
 export const PRODUKSI_QUEUE_NAME = 'kiw-produksi-queue';
 
@@ -46,6 +47,10 @@ export function getProduksiQueue(): Queue<ProduksiJobData, ProduksiJobResult> {
 					age: 7 * 24 * 3600
 				}
 			}
+		});
+
+		produksiQueueInstance.on('error', (err) => {
+			log.warn({ err: err?.message }, '[BullMQ] Produksi queue error');
 		});
 	}
 	return produksiQueueInstance;

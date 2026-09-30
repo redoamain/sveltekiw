@@ -70,6 +70,10 @@ export function getBukuBesarWorker(): Worker<BukuBesarExportJobData, BukuBesarJo
 				`[BullMQ Buku Besar Worker] Job #${job?.id} GAGAL`
 			);
 		});
+
+		bukuBesarWorkerInstance.on('error', (err) => {
+			log.error({ err: err?.message }, '[BullMQ Buku Besar Worker] Worker error');
+		});
 	}
 
 	return bukuBesarWorkerInstance;

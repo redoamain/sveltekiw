@@ -1,5 +1,6 @@
 import { Queue } from 'bullmq';
 import { redisConnectionOptions } from './connection';
+import { log } from '$lib/db';
 
 export const HPP_QUEUE_NAME = 'kiw-hpp-queue';
 
@@ -47,6 +48,10 @@ export function getHPPQueue(): Queue<HPPExportJobData, HPPJobResult> {
 					age: 7 * 24 * 3600 // Simpan histori kegagalan 7 hari
 				}
 			}
+		});
+
+		hppQueueInstance.on('error', (err) => {
+			log.warn({ err: err?.message }, '[BullMQ] HPP queue error');
 		});
 	}
 	return hppQueueInstance;

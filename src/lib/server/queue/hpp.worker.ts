@@ -113,6 +113,10 @@ export function getHPPWorker(): Worker<HPPExportJobData, HPPJobResult> {
 		hppWorkerInstance.on('failed', (job, err) => {
 			log.error({ err: err?.message, jobId: job?.id }, `[BullMQ HPP Worker] Job #${job?.id} GAGAL`);
 		});
+
+		hppWorkerInstance.on('error', (err) => {
+			log.error({ err: err?.message }, '[BullMQ HPP Worker] Worker error');
+		});
 	}
 
 	return hppWorkerInstance;
