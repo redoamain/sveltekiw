@@ -432,8 +432,8 @@ export function generateBukuBesarExcelFromData(report: BukuBesarReportResult): B
       0,
       0,
       0,
-      ac.saldoAwalValas,
-      ac.saldoAwalRp,
+      Number(ac.saldoAwalValas) || 0,
+      Number(ac.saldoAwalRp) || 0,
     ]);
     aoa.push([]);
 
@@ -446,13 +446,13 @@ export function generateBukuBesarExcelFromData(report: BukuBesarReportResult): B
         t.remark,
         t.lawanTransaksi ? ` ${t.lawanTransaksi}` : "",
         t.curr,
-        t.rate ?? 1,
-        t.debet,
-        t.debetRp,
-        t.credit,
-        t.creditRp,
-        0,
-        t.saldoRp,
+        t.rate != null ? Number(t.rate) : 1,
+        Number(t.debet) || 0,
+        Number(t.debetRp) || 0,
+        Number(t.credit) || 0,
+        Number(t.creditRp) || 0,
+        Number(t.saldoValas) || 0,
+        Number(t.saldoRp) || 0,
       ]);
       // Di template rpbbpembantul.xls terdapat baris kosong setelah tiap baris transaksi
       aoa.push([]);
@@ -466,10 +466,12 @@ export function generateBukuBesarExcelFromData(report: BukuBesarReportResult): B
       null,
       null,
       null,
-      ac.totalDebetValas,
-      ac.totalDebetRp,
-      ac.totalCreditValas,
-      ac.totalCreditRp,
+      Number(ac.totalDebetValas) || 0,
+      Number(ac.totalDebetRp) || 0,
+      Number(ac.totalCreditValas) || 0,
+      Number(ac.totalCreditRp) || 0,
+      Number(ac.saldoAkhirValas) || 0,
+      Number(ac.saldoAkhirRp) || 0,
     ]);
 
     // Spasi 3 baris kosong antar akun seperti di template asli
@@ -486,10 +488,12 @@ export function generateBukuBesarExcelFromData(report: BukuBesarReportResult): B
     null,
     null,
     null,
-    grandTotal.totalDebetValas,
-    grandTotal.totalDebetRp,
-    grandTotal.totalCreditValas,
-    grandTotal.totalCreditRp,
+    Number(grandTotal.totalDebetValas) || 0,
+    Number(grandTotal.totalDebetRp) || 0,
+    Number(grandTotal.totalCreditValas) || 0,
+    Number(grandTotal.totalCreditRp) || 0,
+    null,
+    Number(grandTotal.totalSaldoAkhirRp) || 0,
   ]);
   aoa.push([]);
   aoa.push([]);
@@ -501,6 +505,45 @@ export function generateBukuBesarExcelFromData(report: BukuBesarReportResult): B
 
   // Buat Sheet dengan nama BUKU BESAR PEMBANTU
   const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // Set format cell eksplisit: Pastikan tipe data 'n' (number) dan format angka akuntansi untuk semua angka
+  const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+      const cell = ws[cellAddress];
+      if (!cell) continue;
+
+      // Kolom 0 (Tanggal): format sebagai Date
+      if (C === 0 && typeof cell.v === "number" && cell.v > 10000) {
+        cell.t = "n";
+        cell.z = "yyyy-mm-dd";
+      }
+
+      // Kolom 5 (Rate): format Number
+      if (C === 5 && cell.v !== null && cell.v !== undefined && cell.v !== "") {
+        const num = Number(cell.v);
+        if (!isNaN(num)) {
+          cell.t = "n";
+          cell.v = num;
+          cell.z = "#,##0.00";
+        }
+      }
+
+      // Kolom 6 s/d 11 (Debet, Debet Rp, Credit, Credit Rp, Saldo Valas, Saldo Rp):
+      // Wajib bertipe data 'n' (Number) dan berformat angka akuntansi (#,##0.00)
+      if (C >= 6 && C <= 11) {
+        if (cell.v !== null && cell.v !== undefined && cell.v !== "") {
+          const num = Number(cell.v);
+          if (!isNaN(num)) {
+            cell.t = "n";
+            cell.v = num;
+            cell.z = "#,##0.00";
+          }
+        }
+      }
+    }
+  }
 
   // Set lebar kolom agar rapi saat dibuka
   ws["!cols"] = [
@@ -521,7 +564,7 @@ export function generateBukuBesarExcelFromData(report: BukuBesarReportResult): B
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "BUKU BESAR PEMBANTU");
 
-  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  return XLSX.write(wb, { type: "buffer", bookType: "xlsx", cellStyles: true });
 }
 
 /**
