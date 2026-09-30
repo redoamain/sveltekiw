@@ -117,49 +117,17 @@ export async function getBukuBesarData(params: BukuBesarParams): Promise<BukuBes
   req.input("Tgl2", sql.DateTime, new Date(`${tgl2}T23:59:59.000Z`));
   req.input("Acc1", sql.VarChar(9), acc1);
   req.input("Acc2", sql.VarChar(15), acc2);
-  // Optimasi Cerdas Lawan Transaksi (Anti-Crash & Anti-Timeout):
-  // Jika rentang Semua Akun (1101 s/d 9999), memanggil rpBBPembantuL dengan lawantransksi = 1
-  // selalu gagal/timeout di SQL Server karena kalkulasi kursor/self-join yang sangat berat.
-  // Strategi: jalankan lawantransksi = 0 di SQL Server (selesai 3-5 detik), lalu selesaikan lawan COA
-  // secara in-memory di Node.js dalam 50 milidetik!
-  const isAllCoa = acc1 <= "1101" && acc2 >= "9000";
-  const shouldResolveInMemory = lawantransaksi === 1 && isAllCoa;
-  const spLawanParam = shouldResolveInMemory ? 0 : lawantransaksi;
-
+  // LANGSUNG CARA KEDUA:
+  // Selalu kirim lawantransksi = 0 ke SQL Server agar kueri selesai dalam hitungan detik
+  // tanpa beban kursor database yang menyebabkan timeout/crash.
+  // Lawan COA diselesaikan langsung secara in-memory di Node.js (50 milidetik).
   req.input("Curr", sql.VarChar(3), curr);
   req.input("ju", sql.Int, ju);
-  req.input("lawantransksi", sql.Int, spLawanParam);
+  req.input("lawantransksi", sql.Int, 0);
 
   try {
-    let rawRows: any[] = [];
-    try {
     const res = await req.execute("[cp].[dbo].[rpBBPembantuL]");
-    rawRows = res.recordset || [];
-  } catch (err: any) {
-    // Fallback otomatis: jika pemanggilan dengan lawantransksi=1 gagal/timeout,
-    // jangan langsung menyerah — panggil cepat dengan lawantransksi=0 lalu selesaikan in-memory!
-    if (lawantransaksi === 1 && spLawanParam === 1) {
-      log.warn(
-        { err: err?.message },
-        "rpBBPembantuL dengan lawantransksi=1 gagal di SQL Server. Beralih ke fallback cepat lawantransksi=0 + In-Memory Resolver..."
-      );
-      const fallbackReq = pool.request();
-      (fallbackReq as any).timeout = reportTimeout;
-      (fallbackReq as any).overrides = { requestTimeout: reportTimeout };
-      fallbackReq.input("Tgl1", sql.DateTime, new Date(`${tgl1}T00:00:00.000Z`));
-      fallbackReq.input("Tgl2", sql.DateTime, new Date(`${tgl2}T23:59:59.000Z`));
-      fallbackReq.input("Acc1", sql.VarChar(9), acc1);
-      fallbackReq.input("Acc2", sql.VarChar(15), acc2);
-      fallbackReq.input("Curr", sql.VarChar(3), curr);
-      fallbackReq.input("ju", sql.Int, ju);
-      fallbackReq.input("lawantransksi", sql.Int, 0);
-
-      const fallbackRes = await fallbackReq.execute("[cp].[dbo].[rpBBPembantuL]");
-      rawRows = fallbackRes.recordset || [];
-    } else {
-      throw err;
-    }
-  }
+    const rawRows = res.recordset || [];
 
   // Bangun index voucher in-memory untuk memetakan Lawan COA per nomor bukti
   const voucherMap = new Map<

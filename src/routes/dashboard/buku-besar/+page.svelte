@@ -67,7 +67,7 @@
 	let exportAcc2 = $state('9999');
 	let exportCurr = $state('IDR');
 	let exportJu = $state(0);
-	let exportLawanTransaksi = $state(1);
+	let exportLawanTransaksi = $state(true);
 	let exportHideEmpty = $state(true);
 
 	onDestroy(() => {
@@ -159,7 +159,7 @@
 		exportAcc2 = acc2Input || data.filters.acc2;
 		exportCurr = data.filters.curr || 'IDR';
 		exportJu = data.filters.ju ?? 0;
-		exportLawanTransaksi = data.filters.lawantransaksi ?? 1;
+		exportLawanTransaksi = data.filters.lawantransaksi !== 0;
 		exportHideEmpty = data.filters.hideEmpty ?? true;
 
 		// Reset state progress jika membuka modal baru
@@ -211,7 +211,7 @@
 					acc2: exportAcc2,
 					curr: exportCurr,
 					ju: exportJu,
-					lawantransaksi: exportLawanTransaksi,
+					lawantransaksi: exportLawanTransaksi ? 1 : 0,
 					hideEmpty: exportHideEmpty
 				})
 			});
