@@ -44,20 +44,6 @@
 	let loadingMsg = $state('Memuat...');
 	let exportLoading = $state(false);
 
-	// State Modal Antrian BullMQ
-	let showQueueModal = $state(false);
-	let queueLoading = $state(false);
-	let currentJobId = $state<string | null>(null);
-	let jobState = $state<'waiting' | 'active' | 'completed' | 'failed' | null>(null);
-	let jobProgress = $state(0);
-	let jobResult = $state<any>(null);
-	let jobError = $state<string | null>(null);
-	let pollInterval = $state<any>(null);
-
-	onDestroy(() => {
-		if (pollInterval) clearInterval(pollInterval);
-	});
-
 	// Filter input states di Halaman
 	let tgl1Input = $state('');
 	let tgl2Input = $state('');
