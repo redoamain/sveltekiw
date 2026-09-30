@@ -26,3 +26,11 @@ logs/
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Sample data & report dumps
+*.xls
+*.xlsx
+/lap-hpp/
+
+# Graphify output
+/graphify-out/
