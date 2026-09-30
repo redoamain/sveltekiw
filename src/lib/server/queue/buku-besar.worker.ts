@@ -56,7 +56,8 @@ export function getBukuBesarWorker(): Worker<BukuBesarExportJobData, BukuBesarJo
 			},
 			{
 				connection: redisConnectionOptions,
-				concurrency: 2
+				concurrency: 2,
+				lockDuration: 600000 // 10 menit agar worker tidak dianggap stalled saat query berat 5 menit berjalan
 			}
 		);
 

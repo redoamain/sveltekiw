@@ -28,6 +28,15 @@ export function getMaintenanceQueue(): Queue<MaintenanceJobData> {
 	return maintenanceQueueInstance;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms = 3000): Promise<T> {
+	return Promise.race([
+		promise,
+		new Promise<T>((_, reject) =>
+			setTimeout(() => reject(new Error('Redis connection/auth timed out')), ms)
+		)
+	]);
+}
+
 /**
  * Daftarkan cron repeatable jobs (jadwal berkala otomatis).
  */
@@ -36,27 +45,31 @@ export async function setupScheduledJobs() {
 		const queue = getMaintenanceQueue();
 
 		// 1. Session Cleanup setiap 15 menit
-		await queue.upsertJobScheduler(
-			'session-cleanup-scheduler',
-			{ every: 15 * 60 * 1000 },
-			{
-				name: 'session-cleanup',
-				data: { task: 'SESSION_CLEANUP' }
-			}
+		await withTimeout(
+			queue.upsertJobScheduler(
+				'session-cleanup-scheduler',
+				{ every: 15 * 60 * 1000 },
+				{
+					name: 'session-cleanup',
+					data: { task: 'SESSION_CLEANUP' }
+				}
+			)
 		);
 
 		// 2. Health check database setiap 30 menit
-		await queue.upsertJobScheduler(
-			'health-check-scheduler',
-			{ every: 30 * 60 * 1000 },
-			{
-				name: 'health-check',
-				data: { task: 'HEALTH_CHECK' }
-			}
+		await withTimeout(
+			queue.upsertJobScheduler(
+				'health-check-scheduler',
+				{ every: 30 * 60 * 1000 },
+				{
+					name: 'health-check',
+					data: { task: 'HEALTH_CHECK' }
+				}
+			)
 		);
 
 		log.info('[BullMQ] Jadwal cron maintenance otomatis berhasil didaftarkan via upsertJobScheduler (15m & 30m).');
 	} catch (err: any) {
-		log.warn({ err: err?.message }, '[BullMQ] Gagal mendaftarkan scheduled maintenance jobs');
+		log.warn({ err: err?.message }, '[BullMQ] Gagal mendaftarkan scheduled maintenance jobs (Redis timeout atau NOAUTH)');
 	}
 }

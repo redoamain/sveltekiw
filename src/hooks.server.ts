@@ -133,7 +133,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 };
 
 export const init: ServerInit = async () => {
-	await initWorkers();
+	// Inisialisasi background workers secara non-blocking agar HTTP server SvelteKit langsung listening di port
+	initWorkers().catch(() => {});
 
 	const handleExit = async () => {
 		await closeWorkers();

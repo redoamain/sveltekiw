@@ -109,8 +109,9 @@ export async function getBukuBesarData(params: BukuBesarParams): Promise<BukuBes
   const lawantransaksi = params.lawantransaksi != null ? Number(params.lawantransaksi) : 1;
   const hideEmpty = Boolean(params.hideEmpty);
 
-  const reportTimeout = Number(process.env.DB_REPORT_TIMEOUT || 180000);
+  const reportTimeout = Number(process.env.DB_REPORT_TIMEOUT || 300000);
   const req = pool.request();
+  (req as any).timeout = reportTimeout;
   (req as any).overrides = { requestTimeout: reportTimeout };
   req.input("Tgl1", sql.DateTime, new Date(`${tgl1}T00:00:00.000Z`));
   req.input("Tgl2", sql.DateTime, new Date(`${tgl2}T23:59:59.000Z`));
