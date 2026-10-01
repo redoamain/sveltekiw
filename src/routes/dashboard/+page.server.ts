@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { getSPKPaged } from '$lib/server/spk';
 import { getMasterGoodsPaged } from '$lib/server/master';
-import { getMonitoringProduksiPaged } from '$lib/server/monitoring-produksi';
+import { getMonitoringProduksiPaged, getProductionDeptSummary, type DeptProductionStat } from '$lib/server/monitoring-produksi';
 import { getActiveOrdersPaged } from '$lib/server/planning';
 
 export const load: PageServerLoad = async () => {
@@ -14,9 +14,16 @@ export const load: PageServerLoad = async () => {
 	let recentSPK: any[] = [];
 	let recentMaster: any[] = [];
 	let recentProd: any[] = [];
+	let deptStats: DeptProductionStat[] = [
+		{ dept: 'IN', label: 'Injeksi', count: 0 },
+		{ dept: 'SP', label: 'Spray', count: 0 },
+		{ dept: 'MO', label: 'Moulding', count: 0 },
+		{ dept: 'PL', label: 'Plating', count: 0 },
+		{ dept: 'AS', label: 'Assembly', count: 0 }
+	];
 
 	try {
-		const [spkRes, masterRes, prodRes, ppRes] = await Promise.all([
+		const [spkRes, masterRes, prodRes, ppRes, deptRes] = await Promise.all([
 			Promise.all([
 				getSPKPaged({ page: 1, pageSize: 1 }),
 				getSPKPaged({ status: 'active', page: 1, pageSize: 6 }),
@@ -24,7 +31,8 @@ export const load: PageServerLoad = async () => {
 			]),
 			getMasterGoodsPaged(undefined, 1, 6),
 			getMonitoringProduksiPaged({ page: 1, pageSize: 6 }),
-			getActiveOrdersPaged(undefined, undefined, 1, 1)
+			getActiveOrdersPaged(undefined, undefined, 1, 1),
+			getProductionDeptSummary()
 		]);
 
 		spkTotal = spkRes[0].total;
@@ -39,6 +47,7 @@ export const load: PageServerLoad = async () => {
 		recentProd = prodRes.rows;
 
 		ppActiveTotal = ppRes.total;
+		deptStats = deptRes;
 	} catch (err) {
 		console.error('[Dashboard] Error loading overview data:', err);
 	}
@@ -52,6 +61,7 @@ export const load: PageServerLoad = async () => {
 		ppActiveTotal,
 		recentSPK,
 		recentMaster,
-		recentProd
+		recentProd,
+		deptStats
 	};
 };

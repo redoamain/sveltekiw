@@ -202,3 +202,45 @@ export async function getMonitoringProduksiForExport(
   );
   return res.recordset.map(mapRow);
 }
+
+export interface DeptProductionStat {
+  dept: string;
+  label: string;
+  count: number;
+}
+
+export async function getProductionDeptSummary(): Promise<DeptProductionStat[]> {
+  const defaultDepts: DeptProductionStat[] = [
+    { dept: "IN", label: "Injeksi", count: 0 },
+    { dept: "SP", label: "Spray", count: 0 },
+    { dept: "MO", label: "Moulding", count: 0 },
+    { dept: "PL", label: "Plating", count: 0 },
+    { dept: "AS", label: "Assembly", count: 0 }
+  ];
+
+  try {
+    const res = await runQuery(`
+      SELECT 
+        hd.[ProdType] AS dept, 
+        COUNT(1) AS count 
+      FROM [cp].[dbo].[taPRProdHd] AS hd
+      WHERE hd.[ProdType] IN ('IN','SP','MO','PL','AS')
+      GROUP BY hd.[ProdType]
+    `);
+
+    const mapCount = new Map<string, number>();
+    for (const r of res.recordset || []) {
+      const d = String(r.dept || "").trim().toUpperCase();
+      mapCount.set(d, Number(r.count) || 0);
+    }
+
+    return defaultDepts.map((d) => ({
+      ...d,
+      count: mapCount.get(d.dept) ?? 0
+    }));
+  } catch (err) {
+    log.warn({ err }, "Could not fetch getProductionDeptSummary, returning defaults");
+    return defaultDepts;
+  }
+}
+
