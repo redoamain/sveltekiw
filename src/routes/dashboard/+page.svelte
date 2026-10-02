@@ -85,7 +85,7 @@
 		if (hasMenuAccess('/dashboard/input-produksi', data.user)) {
 			return { href: '/dashboard/input-produksi', label: 'Input Produksi', icon: Factory };
 		}
-		if (hasMenuAccess('/dashboard/input-lbm', data.user)) {
+		if (resolvedRole.role === 'WH') {
 			return { href: '/dashboard/input-lbm', label: 'Input LBM Gudang', icon: Truck };
 		}
 		if (hasMenuAccess('/dashboard/monitoring-pembelian', data.user)) {

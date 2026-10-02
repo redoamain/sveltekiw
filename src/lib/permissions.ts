@@ -71,8 +71,8 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
 	// Input Transaksi
 	'/dashboard/input-spk': ['IT', 'PIC', 'PPIC'],
 	'/dashboard/input-produksi': ['IT', 'AS', 'IN', 'PL', 'SP', 'SPR', 'MO', 'PRODUKSI'],
-	'/dashboard/input-lbm': ['IT', 'WH'],
-	'/dashboard/input-lbk': ['IT', 'WH'],
+	'/dashboard/input-lbm': ['*'],
+	'/dashboard/input-lbk': ['*'],
 	'/dashboard/input-penerimaan': ['IT', 'WH'],
 	'/dashboard/input-retur': [
 		'IT',
@@ -160,8 +160,8 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
 	],
 
 	// Gudang & Logistik
-	'/dashboard/lbm': ['IT', 'WH', 'ACC', 'BC', 'PCS', 'KONSULTAN'],
-	'/dashboard/lbk': ['IT', 'WH', 'ACC', 'BC', 'KONSULTAN'],
+	'/dashboard/lbm': ['*'],
+	'/dashboard/lbk': ['*'],
 	'/dashboard/pemasukan-gudang': ['IT', 'WH', 'PCS', 'ACC', 'BC', 'KONSULTAN'],
 	'/dashboard/retur-produksi': [
 		'IT',
