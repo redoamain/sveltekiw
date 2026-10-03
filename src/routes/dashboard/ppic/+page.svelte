@@ -313,7 +313,7 @@
 							loadingMsg = 'Menyiapkan Excel...';
 							setTimeout(() => (loading = false), 3000);
 						}}
-						class="inline-flex"
+						class="inline-flex items-center gap-1.5"
 					>
 						<input type="hidden" name="source" value={data.source} />
 						<input type="hidden" name="tgl1" value={data.tgl1} />
@@ -325,6 +325,15 @@
 						{#each selectedSpks as spk}
 							<input type="hidden" name="spk" value={spk} />
 						{/each}
+						<select
+							name="mode"
+							aria-label="Format Template Excel"
+							title="Pilih Format Template Excel"
+							class="h-10 px-2.5 bg-background border-[3px] border-border font-mono text-xs font-black uppercase tracking-wider brutal-shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary"
+						>
+							<option value="full">Format: Detail (16 Kolom)</option>
+							<option value="simple">Format: Simpel (8 Kolom)</option>
+						</select>
 						<Button
 							type="submit"
 							variant="secondary"

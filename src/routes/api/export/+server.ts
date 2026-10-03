@@ -11,8 +11,9 @@ async function doExportPlan(params: {
   q?: string;
   spks?: string[];
   source?: "spk" | "so";
+  mode?: "full" | "simple";
 }) {
-  const { planId, tgl1, tgl2, q, spks, source = "spk" } = params;
+  const { planId, tgl1, tgl2, q, spks, source = "spk", mode = "full" } = params;
 
   let stored = planId ? getStoredPlan(planId) : undefined;
   if (!stored) {
@@ -45,6 +46,7 @@ async function doExportPlan(params: {
     bomByKodeBarang: stored.bomByKodeBarang,
     stockRows: stored.stockRows,
     reservations,
+    mode,
   });
 
   return new Response(new Uint8Array(buffer), {
@@ -62,11 +64,12 @@ export const GET: RequestHandler = async ({ url }) => {
   const tgl2 = url.searchParams.get("tgl2")?.trim() || undefined;
   const q = url.searchParams.get("q")?.trim() || undefined;
   const source = (url.searchParams.get("source")?.trim().toLowerCase() === "so" ? "so" : "spk") as "spk" | "so";
+  const mode = (url.searchParams.get("mode")?.trim().toLowerCase() === "simple" ? "simple" : "full") as "full" | "simple";
   const spkParam = url.searchParams.get("spk")?.trim() || "";
   const spks = spkParam ? spkParam.split(",").map((s) => s.trim()).filter(Boolean) : undefined;
 
   try {
-    return await doExportPlan({ planId, tgl1, tgl2, q, spks, source });
+    return await doExportPlan({ planId, tgl1, tgl2, q, spks, source, mode });
   } catch (error) {
     log.error({ err: error }, "Gagal export Excel PPIC");
     return new Response(JSON.stringify({ error: errorMessage(error, "Gagal export Excel") }), {
@@ -84,6 +87,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
     const tgl2 = String(fd.get("tgl2") ?? url.searchParams.get("tgl2") ?? "").trim() || undefined;
     const q = String(fd.get("q") ?? url.searchParams.get("q") ?? "").trim() || undefined;
     const source = (String(fd.get("source") ?? url.searchParams.get("source") ?? "spk").trim().toLowerCase() === "so" ? "so" : "spk") as "spk" | "so";
+    const mode = (String(fd.get("mode") ?? url.searchParams.get("mode") ?? "full").trim().toLowerCase() === "simple" ? "simple" : "full") as "full" | "simple";
 
     let spks = fd.getAll("spk").map(String).filter(Boolean);
     if (spks.length === 0) {
@@ -91,7 +95,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
       if (spkParam) spks = spkParam.split(",").map((s) => s.trim()).filter(Boolean);
     }
 
-    return await doExportPlan({ planId, tgl1, tgl2, q, spks: spks.length > 0 ? spks : undefined, source });
+    return await doExportPlan({ planId, tgl1, tgl2, q, spks: spks.length > 0 ? spks : undefined, source, mode });
   } catch (error) {
     log.error({ err: error }, "Gagal export Excel PPIC POST");
     return new Response(JSON.stringify({ error: errorMessage(error, "Gagal export Excel") }), {

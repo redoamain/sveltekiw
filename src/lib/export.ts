@@ -25,6 +25,7 @@ export interface ExportPlanPayload {
   bomByKodeBarang: Map<string, BomItem[]>;
   stockRows: Map<string, StockRow>;
   reservations: StockReservation[];
+  mode?: "full" | "simple";
 }
 
 const sanitizeSheetName = (name: string): string => {
@@ -141,7 +142,8 @@ interface MaterialAgg {
 export async function exportPlanToExcel(
   payload: ExportPlanPayload,
 ): Promise<{ buffer: Buffer; fileName: string }> {
-  const { groups, bomByKodeBarang, stockRows, reservations } = payload;
+  const { groups, bomByKodeBarang, stockRows, reservations, mode = "full" } = payload;
+  const isSimple = mode === "simple";
   const today = new Date().toISOString().split("T")[0];
 
   if (groups.length === 0) {
@@ -151,13 +153,14 @@ export async function exportPlanToExcel(
   // ============ NAMA FILE ============
   const cleanName = (n: string, len: number) =>
     (n || "").replace(/[\\/*?:"<>|]/g, "").replace(/\s+/g, "_").substring(0, len);
+  const suffixMode = isSimple ? "_Simpel" : "";
   let fileName: string;
   if (groups.length === 1) {
     const g = groups[0];
-    fileName = `${cleanName(g.Nama_PO || g.No_SPK, 50)}_${today}.xlsx`;
+    fileName = `${cleanName(g.Nama_PO || g.No_SPK, 50)}${suffixMode}_${today}.xlsx`;
   } else {
     const first = groups[0];
-    fileName = `${cleanName(first.Nama_PO || first.No_SPK, 40)}_dan_${groups.length - 1}_lainnya_${today}.xlsx`;
+    fileName = `${cleanName(first.Nama_PO || first.No_SPK, 40)}_dan_${groups.length - 1}_lainnya${suffixMode}_${today}.xlsx`;
   }
 
   // ============ MASTER DATA (batch) ============
@@ -544,62 +547,375 @@ export async function exportPlanToExcel(
   }
   const sortedDepartments = Array.from(finalMaterialsByDept.keys()).sort();
 
-  const deptColWidths = [
-    { wch: 50 }, { wch: 18 }, { wch: 40 }, { wch: 35 }, { wch: 30 }, { wch: 20 },
-    { wch: 25 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 },
-    { wch: 18 }, { wch: 18 }, { wch: 50 }, { wch: 15 }, { wch: 30 }, { wch: 40 },
+  const deptColWidthsFull = [
+    { wch: 32 }, // Col 0: Kode Barang (File Tree)
+    { wch: 45 }, // Col 1: Nama Barang
+    { wch: 25 }, // Col 2: Nama China
+    { wch: 12 }, // Col 3: Tipe Item (SPK / HASIL / BAHAN)
+    { wch: 12 }, // Col 4: Level BOM
+    { wch: 15 }, // Col 5: Departemen
+    { wch: 12 }, // Col 6: Qty / Unit
+    { wch: 15 }, // Col 7: Qty Butuh
+    { wch: 20 }, // Col 8: Total Butuh (Se-Dept)
+    { wch: 18 }, // Col 9: Stok Wincp (Real)
+    { wch: 15 }, // Col 10: Stok Akhir
+    { wch: 15 }, // Col 11: Sisa Stok
+    { wch: 13 }, // Col 12: Status Stok
+    { wch: 20 }, // Col 13: Kode Barang Induk
+    { wch: 18 }, // Col 14: No SPK
+    { wch: 35 }, // Col 15: Keterangan / Variant
   ];
-  const headersDept = [
-    "Barang Jadi",
-    "Kode Material",
-    "Nama Material",
+
+  const deptColWidthsSimple = [
+    { wch: 32 }, // Col 0: Kode Barang (File Tree)
+    { wch: 45 }, // Col 1: Nama Barang
+    { wch: 12 }, // Col 2: Qty / Unit
+    { wch: 15 }, // Col 3: Qty Butuh
+    { wch: 20 }, // Col 4: Total Butuh (Se-Dept)
+    { wch: 18 }, // Col 5: Stok Real (Wincp)
+    { wch: 15 }, // Col 6: Sisa Stok
+    { wch: 13 }, // Col 7: Status Stok
+  ];
+
+  const headersDeptTreeFull: Cell[] = [
+    "Kode Barang",
+    "Nama Barang",
     "Nama China",
-    "Spesifikasi",
-    "Warna",
-    "Bahan",
+    "Tipe Item",
+    "Level BOM",
     "Departemen",
-    "Total Kebutuhan",
-    "Reserved (Qty PO Lain)",
-    "Total Dibutuhkan",
+    "Qty / Unit",
+    "Qty Butuh",
+    "Total Butuh (Se-Dept)",
     "Stok Wincp (Real)",
     "Stok Akhir",
     "Sisa Stok",
-    "Reserved Oleh SPK",
-    "Status",
-    "Keterangan Variant",
-    "Info Multi Level",
+    "Status Stok",
+    "Kode Barang Induk",
+    "No SPK",
+    "Keterangan / Variant",
   ];
+
+  const headersDeptTreeSimple: Cell[] = [
+    "Kode Barang",
+    "Nama Barang",
+    "Qty / Unit",
+    "Qty Butuh",
+    "Total Butuh (Se-Dept)",
+    "Stok Real (Wincp)",
+    "Sisa Stok",
+    "Status Stok",
+  ];
+
+  const deptColWidths = isSimple ? deptColWidthsSimple : deptColWidthsFull;
+  const headersDeptTree = isSimple ? headersDeptTreeSimple : headersDeptTreeFull;
+
+  // Helper struktur File Tree per Departemen
+  interface FileTreeNode {
+    curr: BomItem;
+    parentKodeBarang: string;
+    isLeaf: boolean;
+    isFromOtherDept: boolean;
+    children: FileTreeNode[];
+  }
+
+  const buildDeptFileTree = (
+    node: BomItem,
+    parentKodeBarang: string,
+    targetDept: string,
+  ): FileTreeNode => {
+    const isTarget = (node.Departemen || "UNKNOWN").trim().toUpperCase() === targetDept;
+    const resultChildren: FileTreeNode[] = [];
+
+    if (node.children && node.children.length > 0) {
+      for (const child of node.children) {
+        const childDept = (child.Departemen || "UNKNOWN").trim().toUpperCase();
+        if (childDept === targetDept) {
+          resultChildren.push(buildDeptFileTree(child, node.ItemID, targetDept));
+        } else {
+          resultChildren.push({
+            curr: child,
+            parentKodeBarang: node.ItemID,
+            isLeaf: true,
+            isFromOtherDept: true,
+            children: [],
+          });
+        }
+      }
+    }
+
+    return {
+      curr: node,
+      parentKodeBarang,
+      isLeaf: resultChildren.length === 0,
+      isFromOtherDept: !isTarget,
+      children: resultChildren,
+    };
+  };
+
+  const findDeptEntryRoots = (
+    nodes: BomItem[],
+    parentKodeBarang: string,
+    targetDept: string,
+    out: FileTreeNode[],
+  ) => {
+    for (const node of nodes) {
+      const nodeDept = (node.Departemen || "UNKNOWN").trim().toUpperCase();
+      if (nodeDept === targetDept) {
+        out.push(buildDeptFileTree(node, parentKodeBarang, targetDept));
+      } else {
+        if (node.children && node.children.length > 0) {
+          findDeptEntryRoots(node.children, node.ItemID, targetDept, out);
+        }
+      }
+    }
+  };
 
   for (const dept of sortedDepartments) {
     const deptMaterials = finalMaterialsByDept.get(dept) || [];
     const totalNeeded = deptMaterials.reduce((sum, row) => sum + Number(row[8] || 0), 0);
     const totalSisa = deptMaterials.reduce((sum, row) => sum + Number(row[13] || 0), 0);
 
+    const normTargetDept = (dept || "").trim().toUpperCase();
+
+    // Map total kebutuhan se-departemen untuk tiap kode material
+    const deptTotalMap = new Map<string, number>();
+    const deptMap = materialsByDept.get(dept);
+    if (deptMap) {
+      for (const [code, r] of deptMap) {
+        deptTotalMap.set(code, Number(r[8]) || 0);
+      }
+    }
+
+    const deptTreeRows: Cell[][] = [];
+    const outRowMeta: { level: number }[] = [
+      { level: 0 }, // Row 0: Title
+      { level: 0 }, // Row 1: Tanggal Export
+      { level: 0 }, // Row 2: Tanggal Stok
+      { level: 0 }, // Row 3: Petunjuk Outline
+      { level: 0 }, // Row 4: Empty row
+      { level: 0 }, // Row 5: Table Header
+    ];
+
+    const merges: XLSX.Range[] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: headersDeptTree.length - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: headersDeptTree.length - 1 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: headersDeptTree.length - 1 } },
+      { s: { r: 3, c: 0 }, e: { r: 3, c: headersDeptTree.length - 1 } },
+    ];
+
+    for (const group of groups) {
+      for (const barangJadi of linesOf(group)) {
+        const bomFlat = bomByKodeBarang.get(barangJadi.Kode_Barang) ?? [];
+        if (bomFlat.length === 0) continue;
+
+        const filteredBom = bomFlat.filter(
+          (b) => Number(b.Level) > 0 && !isINJECTIONDepartment(b.Departemen),
+        );
+        if (filteredBom.length === 0) continue;
+
+        const accumulatedMap = calculateAccumulatedQty(filteredBom);
+        const treeStructure = buildTreeWithDuplicates(filteredBom);
+
+        const deptRoots: FileTreeNode[] = [];
+        findDeptEntryRoots(treeStructure, barangJadi.Kode_Barang, normTargetDept, deptRoots);
+
+        if (deptRoots.length === 0) continue;
+
+        // Baris Header Folder SPK (Root level) menggunakan Kode Barang
+        const spkTitle = `📁 ${barangJadi.Kode_Barang}`;
+        if (isSimple) {
+          deptTreeRows.push([
+            spkTitle,                                        // Col 0: Kode Barang (Tree)
+            barangJadi.Nama_PO || barangJadi.Kode_Barang,    // Col 1: Nama Barang
+            1,                                               // Col 2: Qty / Unit
+            barangJadi.QTY,                                  // Col 3: Qty Butuh
+            barangJadi.QTY,                                  // Col 4: Total Butuh (Se-Dept)
+            "",                                              // Col 5: Stok Real (Wincp)
+            "",                                              // Col 6: Sisa Stok
+            "-",                                             // Col 7: Status Stok
+          ]);
+        } else {
+          deptTreeRows.push([
+            spkTitle,                                        // Col 0: Kode Barang (Tree)
+            barangJadi.Nama_PO || barangJadi.Kode_Barang,    // Col 1: Nama Barang
+            "",                                              // Col 2: Nama China
+            "SPK",                                           // Col 3: Tipe Item
+            "Level 0",                                       // Col 4: Level BOM
+            normTargetDept,                                  // Col 5: Departemen
+            1,                                               // Col 6: Qty / Unit
+            barangJadi.QTY,                                  // Col 7: Qty Butuh
+            barangJadi.QTY,                                  // Col 8: Total Butuh (Se-Dept)
+            "",                                              // Col 9: Stok Wincp (Real)
+            "",                                              // Col 10: Stok Akhir
+            "",                                              // Col 11: Sisa Stok
+            "-",                                             // Col 12: Status Stok
+            "-",                                             // Col 13: Kode Barang Induk
+            group.No_SPK,                                    // Col 14: No SPK
+            `Target Order SPK: ${barangJadi.QTY.toLocaleString()} Unit`, // Col 15: Keterangan
+          ]);
+        }
+        outRowMeta.push({ level: 0 });
+
+        const displayedItems = new Map<string, number>();
+
+        const renderFileTreeNode = (
+          node: FileTreeNode,
+          ancestorPrefix: string,
+          isLast: boolean,
+          outlineLevel: number,
+        ) => {
+          const curr = node.curr;
+          const currId = normalizeItemId(curr.ItemID);
+          const currLevel = Number(curr.Level);
+          const stockRow = stockRows.get(currId);
+          const accumulatedKey = `${currId}_L${currLevel}`;
+          const accumulatedQty = accumulatedMap.get(accumulatedKey) || curr.Qty;
+          const neededThisLine = accumulatedQty * barangJadi.QTY;
+          const totalSeDept = deptTotalMap.get(currId) ?? neededThisLine;
+          const stockWincp = stockRow?.SaldoAkhirFisik || 0;
+          const stockAkhir = stockRow?.SaldoAkhir || 0;
+          const sisaStok = stockWincp - totalSeDept;
+
+          const prevLevel = displayedItems.get(currId);
+          const isDuplicate = prevLevel !== undefined && prevLevel !== currLevel;
+          displayedItems.set(currId, currLevel);
+
+          const hasChildren = node.children.length > 0;
+          let tipeItem = "BAHAN";
+          if (hasChildren && !node.isFromOtherDept) {
+            tipeItem = "HASIL";
+          }
+
+          const statusStock = stockWincp >= totalSeDept ? "AMAN" : stockWincp > 0 ? "KURANG" : "HABIS";
+
+          const branchChar = isDuplicate ? "↳ " : isLast ? "└── " : "├── ";
+          let icon = "";
+          if (tipeItem === "HASIL") {
+            icon = "📦 ";
+          } else if (node.isFromOtherDept) {
+            icon = `📄 [${curr.Departemen || "GUDANG"}] `;
+          } else {
+            icon = "📄 ";
+          }
+
+          // File tree murni berbasis KODE BARANG
+          const treeCol = `${ancestorPrefix}${branchChar}${icon}${curr.ItemID}`;
+
+          let calcNote = "";
+          if (currLevel === 1) {
+            calcNote = `${curr.Qty} × ${barangJadi.QTY} = ${neededThisLine.toLocaleString()}`;
+          } else {
+            const parentAcc = curr.Qty > 0 ? accumulatedQty / curr.Qty : 1;
+            calcNote = `${curr.Qty} × ${parentAcc} × ${barangJadi.QTY} = ${neededThisLine.toLocaleString()}`;
+          }
+
+          const variantInfo = getVariantInfo(currId);
+
+          if (isSimple) {
+            deptTreeRows.push([
+              treeCol,                                       // Col 0: Kode Barang (Tree)
+              curr.ItemName || curr.ItemID,                  // Col 1: Nama Barang
+              curr.Qty,                                      // Col 2: Qty / Unit
+              neededThisLine,                                // Col 3: Qty Butuh
+              totalSeDept,                                   // Col 4: Total Butuh (Se-Dept)
+              stockWincp,                                    // Col 5: Stok Real (Wincp)
+              sisaStok,                                      // Col 6: Sisa Stok
+              statusStock,                                   // Col 7: Status Stok
+            ]);
+          } else {
+            deptTreeRows.push([
+              treeCol,                                       // Col 0: Kode Barang (Tree)
+              curr.ItemName || curr.ItemID,                  // Col 1: Nama Barang
+              curr.ItemName2 || "",                          // Col 2: Nama China
+              tipeItem,                                      // Col 3: Tipe Item
+              `Level ${curr.Level}`,                         // Col 4: Level BOM
+              curr.Departemen || "-",                        // Col 5: Departemen
+              curr.Qty,                                      // Col 6: Qty / Unit
+              neededThisLine,                                // Col 7: Qty Butuh
+              totalSeDept,                                   // Col 8: Total Butuh (Se-Dept)
+              stockWincp,                                    // Col 9: Stok Wincp (Real)
+              stockAkhir,                                    // Col 10: Stok Akhir
+              sisaStok,                                      // Col 11: Sisa Stok
+              statusStock,                                   // Col 12: Status Stok
+              node.parentKodeBarang,                         // Col 13: Kode Barang Induk
+              group.No_SPK,                                  // Col 14: No SPK
+              variantInfo ? `${variantInfo} | ${calcNote}` : calcNote, // Col 15: Keterangan
+            ]);
+          }
+
+          outRowMeta.push({ level: Math.min(outlineLevel, 7) });
+
+          const nextPrefix = ancestorPrefix + (isLast ? "    " : "│   ");
+          for (let i = 0; i < node.children.length; i++) {
+            const child = node.children[i];
+            const isLastChild = i === node.children.length - 1;
+            renderFileTreeNode(child, nextPrefix, isLastChild, outlineLevel + 1);
+          }
+        };
+
+        for (let i = 0; i < deptRoots.length; i++) {
+          const isLastRoot = i === deptRoots.length - 1;
+          renderFileTreeNode(deptRoots[i], "", isLastRoot, 1);
+        }
+
+        deptTreeRows.push([]);
+        outRowMeta.push({ level: 0 });
+      }
+    }
+
+    if (deptTreeRows.length === 0) {
+      deptTreeRows.push([
+        "Tidak ada item yang diproses atau dikonsumsi di departemen ini untuk SPK terpilih.",
+      ]);
+      outRowMeta.push({ level: 0 });
+    } else {
+      const summaryRowIndex = 6 + deptTreeRows.length;
+      deptTreeRows.push([
+        `TOTAL KEBUTUHAN MATERIAL DEPARTEMEN ${normTargetDept}: ${totalNeeded.toLocaleString()} UNIT | SISA STOK REAL: ${totalSisa.toLocaleString()} UNIT`,
+      ]);
+      outRowMeta.push({ level: 0 });
+      merges.push({ s: { r: summaryRowIndex, c: 0 }, e: { r: summaryRowIndex, c: headersDeptTree.length - 1 } });
+
+      deptTreeRows.push([]);
+      outRowMeta.push({ level: 0 });
+
+      const legendHeaderIndex = 6 + deptTreeRows.length;
+      deptTreeRows.push(["LEGENDA SIMBOL FILE TREE & PETUNJUK:"]);
+      outRowMeta.push({ level: 0 });
+      merges.push({ s: { r: legendHeaderIndex, c: 0 }, e: { r: legendHeaderIndex, c: headersDeptTree.length - 1 } });
+
+      const legends = [
+        "📁 [Kode Barang] = Target Order SPK / Barang Jadi (Root Level)",
+        "📦 HASIL = Sub-rakitan / komponen utama yang dihasilkan di departemen ini",
+        "📄 BAHAN = Komponen / bahan konsumsi yang langsung dipasang ke induknya",
+        "📄 [DEPT] = Komponen masuk yang dipasok dari departemen lain (misal: [SPRAY], [MOULDING], [GUDANG])",
+        "↳ = Item duplikat yang muncul di level rakitan berbeda",
+        "Pohon File Tree = Ditampilkan murni menggunakan Kode Barang agar ringkas; nama lengkap tersedia di kolom 'Nama Barang'",
+        "Tombol [1] [2] [3] = Gunakan panel outline di margin kiri Excel untuk membuka/menutup folder",
+      ];
+      for (const leg of legends) {
+        const rIdx = 6 + deptTreeRows.length;
+        deptTreeRows.push([leg]);
+        outRowMeta.push({ level: 0 });
+        merges.push({ s: { r: rIdx, c: 0 }, e: { r: rIdx, c: headersDeptTree.length - 1 } });
+      }
+    }
+
     const wsData: Cell[][] = [
-      [`LAPORAN KEBUTUHAN MATERIAL - DEPARTEMEN ${(dept as string).toUpperCase()}`],
+      [`LAPORAN RENCANA PRODUKSI (FILE TREE ${isSimple ? "SIMPEL" : "DETAIL"}) - DEPARTEMEN ${(dept as string).toUpperCase()}`],
       [`Tanggal Export: ${new Date().toLocaleDateString("id-ID")} ${new Date().toLocaleTimeString("id-ID")}`],
       [`Tanggal Stok: ${today}`],
-      [`Catatan: Material dengan kode yang sama dijumlahkan dari SEMUA LEVEL BOM`],
+      [`Petunjuk: Gunakan tombol outline [1] [2] [3] di sebelah kiri Excel untuk expand / collapse pohon rakitan.`],
       [],
-      ["DETAIL MATERIAL"],
-      headersDept,
-      ...deptMaterials,
-      [],
-      [
-        `Total: ${deptMaterials.length} material, ` +
-          `Kebutuhan: ${totalNeeded.toLocaleString()}, ` +
-          `Sisa Stok: ${totalSisa.toLocaleString()}`,
-      ],
+      headersDeptTree,
+      ...deptTreeRows,
     ];
 
     const wsDept = XLSX.utils.aoa_to_sheet(wsData);
     wsDept["!cols"] = deptColWidths;
-    wsDept["!merges"] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: headersDept.length - 1 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: headersDept.length - 1 } },
-      { s: { r: 2, c: 0 }, e: { r: 2, c: headersDept.length - 1 } },
-      { s: { r: 3, c: 0 }, e: { r: 3, c: headersDept.length - 1 } },
-    ];
+    wsDept["!merges"] = merges;
+    wsDept["!rows"] = outRowMeta;
 
     const sheetName = getUniqueSheetName(wb, dept.toUpperCase());
     XLSX.utils.book_append_sheet(wb, wsDept, sheetName);
@@ -656,13 +972,21 @@ export async function exportPlanToExcel(
     ["1", "Tanggal Export", "Tanggal saat laporan diekspor"],
     ["2", "Tanggal Stok", "Tanggal data stok yang digunakan"],
     [""],
-    ["B. PENJELASAN KHUSUS - MULTI LEVEL"],
+    ["B. STRUKTUR SHEET DEPARTEMEN (FILE TREE)"],
+    ["No", "Fitur", "Keterangan"],
+    ["1", "Format File Tree", "Struktur tunggal terpadu berhierarki (Folder SPK 📁 -> Sub-rakitan 📦 -> Bahan 📄)"],
+    ["2", "Outline Grouping", "Tombol [1] [2] [3] di sebelah kiri margin Excel untuk expand / collapse pohon rakitan"],
+    ["3", "Qty Butuh vs Total Butuh", "Kolom 'Qty Butuh' untuk alokasi pengerjaan rakitan tersebut, sedangkan 'Total Butuh (Se-Dept)' untuk acuan penarikan gudang"],
+    ["4", "Asal Pasokan", "Bahan masuk dari departemen lain ditandai dengan label [DEPT] (misal: [SPRAY], [MOULDING], [GUDANG])"],
+    ["5", "Mode Template", `Format saat ini: ${isSimple ? "SIMPEL (8 Kolom ringkas untuk lantai produksi)" : "DETAIL (16 Kolom lengkap)"}`],
+    [""],
+    ["C. PENJELASAN KHUSUS - MULTI LEVEL"],
     ["No", "Item", "Keterangan"],
     ["1", "Material Duplikat", "Material yang muncul di multiple level BOM (contoh: 06R123)"],
     ["2", "Perhitungan", "Semua level dihitung dan dijumlahkan (tidak ada yang di-skip)"],
     ["3", "Info Multi Level", "Kolom Info Multi Level menunjukkan breakdown per level"],
     [""],
-    ["C. INFORMASI FILE"],
+    ["D. INFORMASI FILE"],
     ["No", "Informasi", "Nilai"],
     ["1", "Nama File", fileName],
     ["2", "Jumlah PO", groups.length],
@@ -674,8 +998,10 @@ export async function exportPlanToExcel(
   wsKeterangan["!cols"] = [{ wch: 8 }, { wch: 30 }, { wch: 50 }];
   wsKeterangan["!merges"] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: 2 } },
     { s: { r: 7, c: 0 }, e: { r: 7, c: 2 } },
-    { s: { r: 13, c: 0 }, e: { r: 13, c: 2 } },
+    { s: { r: 15, c: 0 }, e: { r: 15, c: 2 } },
+    { s: { r: 21, c: 0 }, e: { r: 21, c: 2 } },
   ];
   XLSX.utils.book_append_sheet(wb, wsKeterangan, "KETERANGAN");
 
