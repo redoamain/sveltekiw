@@ -212,7 +212,7 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
 
 	// Pembelian & Master
 	'/dashboard/input-po': ['IT', 'PCS', 'ACC', 'WH', 'PIC', 'PPIC', 'DIRECTOR', 'KONSULTAN'],
-	'/dashboard/monitoring-pembelian': ['IT', 'PCS', 'ACC', 'PIC', 'PPIC', 'WH', 'KONSULTAN'],
+	'/dashboard/monitoring-pembelian': ['*'],
 	'/dashboard/master-barang': [
 		'IT',
 		'PCS',

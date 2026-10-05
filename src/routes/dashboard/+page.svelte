@@ -88,7 +88,7 @@
 		if (resolvedRole.role === 'WH') {
 			return { href: '/dashboard/input-lbm', label: 'Input LBM Gudang', icon: Truck };
 		}
-		if (hasMenuAccess('/dashboard/monitoring-pembelian', data.user)) {
+		if (resolvedRole.role === 'PCS') {
 			return { href: '/dashboard/monitoring-pembelian', label: 'Pembelian', icon: ShoppingCart };
 		}
 		return { href: '/dashboard/kartu-stock', label: 'Kartu Stock', icon: Layers };
