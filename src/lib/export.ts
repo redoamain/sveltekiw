@@ -1,7 +1,12 @@
 // Export hasil rencana produksi ke Excel — struktur mengikuti project kiw (persis).
 // Berjalan penuh di server (Astro SSR): master item diambil langsung dari DB,
 // workbook dikembalikan sebagai Buffer untuk dikirim sebagai response download.
-import * as XLSX from "xlsx";
+import type * as XLSXTypes from "xlsx";
+import xlsxStyleModule from "xlsx-js-style";
+import JSZipModule from "jszip";
+
+const XLSX = ((xlsxStyleModule as any).default || xlsxStyleModule) as typeof XLSXTypes;
+const JSZip = (JSZipModule as any).default || JSZipModule;
 import type { BomItem, StockReservation, StockRow } from "@/lib/types";
 import type { SpkGroup } from "@/lib/domain/material";
 import { normalizeItemId, isINJECTIONDepartment, calculateAccumulatedQty } from "@/lib/domain/material";
@@ -28,6 +33,194 @@ export interface ExportPlanPayload {
   mode?: "full" | "simple" | "erp-china";
 }
 
+// ==================== TEMA WARNA PER DEPARTEMEN ====================
+export interface DeptTheme {
+  name: string;
+  tabColor: string; // RGB Hex 6 digit (misal: "2563EB")
+  bannerFill: string; // Hex untuk header/banner judul sheet
+  bannerFont: string; // Warna font banner
+  headerFill: string; // Hex untuk baris header kolom tabel
+  headerFont: string; // Warna font header kolom
+  folderFill: string; // Hex untuk baris Folder SPK (akar pohon)
+  folderFont: string; // Warna font baris Folder SPK
+  badgeFill: string; // Hex untuk badge sel Departemen
+  badgeFont: string;
+}
+
+export function getDeptTheme(deptName?: string): DeptTheme {
+  const d = (deptName || "").trim().toUpperCase();
+  if (d.includes("INJ") || d === "IN" || d.includes("INJEKSI")) {
+    // INJECTION: Royal Blue Theme
+    return {
+      name: "INJECTION",
+      tabColor: "2563EB",
+      bannerFill: "1D4ED8",
+      bannerFont: "FFFFFF",
+      headerFill: "1E40AF",
+      headerFont: "FFFFFF",
+      folderFill: "DBEAFE",
+      folderFont: "1E3A8A",
+      badgeFill: "2563EB",
+      badgeFont: "FFFFFF",
+    };
+  }
+  if (d.includes("SPRAY") || d === "SP") {
+    // SPRAYING: Ocean Cyan / Teal Theme
+    return {
+      name: "SPRAYING",
+      tabColor: "06B6D4",
+      bannerFill: "0891B2",
+      bannerFont: "FFFFFF",
+      headerFill: "155E75",
+      headerFont: "FFFFFF",
+      folderFill: "CFFAFE",
+      folderFont: "155E75",
+      badgeFill: "0891B2",
+      badgeFont: "FFFFFF",
+    };
+  }
+  if (d.includes("MOULD") || d === "MO") {
+    // MOULDING: Warm Amber / Orange Theme
+    return {
+      name: "MOULDING",
+      tabColor: "F59E0B",
+      bannerFill: "D97706",
+      bannerFont: "FFFFFF",
+      headerFill: "92400E",
+      headerFont: "FFFFFF",
+      folderFill: "FEF3C7",
+      folderFont: "92400E",
+      badgeFill: "D97706",
+      badgeFont: "FFFFFF",
+    };
+  }
+  if (d.includes("PLAT") || d === "PL") {
+    // PLATTING: Vivid Purple Theme
+    return {
+      name: "PLATTING",
+      tabColor: "8B5CF6",
+      bannerFill: "7C3AED",
+      bannerFont: "FFFFFF",
+      headerFill: "581C87",
+      headerFont: "FFFFFF",
+      folderFill: "F3E8FF",
+      folderFont: "581C87",
+      badgeFill: "7C3AED",
+      badgeFont: "FFFFFF",
+    };
+  }
+  if (d.includes("ASS") || d === "AS") {
+    // ASSEMBLY: Emerald Green Theme
+    return {
+      name: "ASSEMBLY",
+      tabColor: "10B981",
+      bannerFill: "059669",
+      bannerFont: "FFFFFF",
+      headerFill: "064E3B",
+      headerFont: "FFFFFF",
+      folderFill: "D1FAE5",
+      folderFont: "064E3B",
+      badgeFill: "059669",
+      badgeFont: "FFFFFF",
+    };
+  }
+  if (d.includes("GUDANG") || d === "GDG" || d === "WH") {
+    // GUDANG: Slate Theme
+    return {
+      name: "GUDANG",
+      tabColor: "64748B",
+      bannerFill: "475569",
+      bannerFont: "FFFFFF",
+      headerFill: "334155",
+      headerFont: "FFFFFF",
+      folderFill: "F1F5F9",
+      folderFont: "334155",
+      badgeFill: "64748B",
+      badgeFont: "FFFFFF",
+    };
+  }
+  // Default / Lainnya: Slate Gray
+  return {
+    name: d || "LAINNYA",
+    tabColor: "64748B",
+    bannerFill: "475569",
+    bannerFont: "FFFFFF",
+    headerFill: "1E293B",
+    headerFont: "FFFFFF",
+    folderFill: "F1F5F9",
+    folderFont: "0F172A",
+    badgeFill: "475569",
+    badgeFont: "FFFFFF",
+  };
+}
+
+function setCellStyle(ws: any, cellAddr: string, style: any) {
+  if (!ws[cellAddr]) {
+    ws[cellAddr] = { t: "s", v: "" };
+  }
+  ws[cellAddr].s = { ...(ws[cellAddr].s || {}), ...style };
+}
+
+async function applyWorkbookTabColors(
+  xlsxBuffer: Buffer,
+  tabColorMap: Record<string, string>,
+): Promise<Buffer> {
+  try {
+    const zip = await JSZip.loadAsync(xlsxBuffer);
+    const wbXmlFile = zip.file("xl/workbook.xml");
+    const relsXmlFile = zip.file("xl/_rels/workbook.xml.rels");
+    if (!wbXmlFile || !relsXmlFile) return xlsxBuffer;
+
+    const wbXml = await wbXmlFile.async("text");
+    const relsXml = await relsXmlFile.async("text");
+
+    const relMap: Record<string, string> = {};
+    const relRegex = /<Relationship[^>]*Id="([^"]*)"[^>]*Target="([^"]*)"[^>]*\/>/g;
+    let match: RegExpExecArray | null;
+    while ((match = relRegex.exec(relsXml)) !== null) {
+      relMap[match[1]] = match[2];
+    }
+
+    const sheetRegex = /<sheet[^>]*name="([^"]*)"[^>]*sheetId="([^"]*)"[^>]*r:id="([^"]*)"[^>]*\/>/g;
+    while ((match = sheetRegex.exec(wbXml)) !== null) {
+      const sName = match[1];
+      const rId = match[3];
+      const target = relMap[rId];
+      const colorHex = tabColorMap[sName];
+      if (colorHex && target) {
+        const cleanTarget = target.replace(/^\//, "");
+        const zipPath = cleanTarget.startsWith("worksheets/")
+          ? `xl/${cleanTarget}`
+          : cleanTarget.startsWith("xl/")
+          ? cleanTarget
+          : `xl/worksheets/${cleanTarget.split("/").pop()}`;
+
+        const sheetFile = zip.file(zipPath);
+        if (sheetFile) {
+          let sXml = await sheetFile.async("text");
+          const argb = colorHex.length === 6 ? `FF${colorHex}` : colorHex;
+          if (sXml.includes("<sheetPr>")) {
+            sXml = sXml.replace("<sheetPr>", `<sheetPr><tabColor rgb="${argb}"/>`);
+          } else if (sXml.includes("<sheetPr ")) {
+            sXml = sXml.replace(/<sheetPr([^>]*)>/, `<sheetPr$1><tabColor rgb="${argb}"/>`);
+          } else {
+            sXml = sXml.replace(
+              /<worksheet([^>]*)>/,
+              `<worksheet$1><sheetPr><tabColor rgb="${argb}"/></sheetPr>`,
+            );
+          }
+          zip.file(zipPath, sXml);
+        }
+      }
+    }
+
+    return (await zip.generateAsync({ type: "nodebuffer" })) as Buffer;
+  } catch (err) {
+    console.error("Failed to inject sheet tab colors:", err);
+    return xlsxBuffer;
+  }
+}
+
 const sanitizeSheetName = (name: string): string => {
   let clean = name.replace(/[\\/*?:\[\]]/g, "");
   clean = clean.replace(/\|/g, "");
@@ -36,7 +229,7 @@ const sanitizeSheetName = (name: string): string => {
   return clean;
 };
 
-const getUniqueSheetName = (wb: XLSX.WorkBook, baseName: string): string => {
+const getUniqueSheetName = (wb: XLSXTypes.WorkBook, baseName: string): string => {
   const sheetName = sanitizeSheetName(baseName);
   let counter = 1;
   let uniqueName = sheetName;
@@ -197,7 +390,7 @@ export async function exportPlanToExcel(
 
   const masterDataMap = new Map<
     string,
-    { name: string; namecina: string; spec: string; warna: string; bahan: string }
+    { name: string; namecina: string; spec: string; warna: string; warnac: string; bahan: string }
   >();
   if (allTargetIds.length > 0) {
     try {
@@ -208,6 +401,7 @@ export async function exportPlanToExcel(
           namecina: String(m.namecina ?? ""),
           spec: String(m.Spec ?? "-"),
           warna: String(m.warna ?? "-"),
+          warnac: String(m.warnac ?? "-"),
           bahan: String(m.bahan ?? "-"),
         });
       });
@@ -216,7 +410,7 @@ export async function exportPlanToExcel(
     }
   }
   const masterOf = (id: string) =>
-    masterDataMap.get(id) ?? { name: "", namecina: "", spec: "-", warna: "-", bahan: "-" };
+    masterDataMap.get(id) ?? { name: "", namecina: "", spec: "-", warna: "-", warnac: "-", bahan: "-" };
 
   // ============ MODE ERP CHINA ============
   if (isChina) {
@@ -457,6 +651,7 @@ export async function exportPlanToExcel(
   );
 
   const wb = XLSX.utils.book_new();
+  const tabColorMap: Record<string, string> = {};
 
   // ==================== SHEET 1: PO ====================
   const poData: Record<string, string | number>[] = [];
@@ -474,8 +669,29 @@ export async function exportPlanToExcel(
   });
   const wsPO = XLSX.utils.json_to_sheet(poData);
   wsPO["!cols"] = [
-    { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 40 }, { wch: 15 }, { wch: 12 },
+    { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 40 }, { wch: 18 }, { wch: 12 },
   ];
+  tabColorMap["PO"] = "4338CA";
+  for (let c = 0; c < 6; c++) {
+    setCellStyle(wsPO, XLSX.utils.encode_cell({ r: 0, c }), {
+      fill: { fgColor: { rgb: "3730A3" } },
+      font: { name: "Calibri", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: { bottom: { style: "medium", color: { rgb: "1E1B4B" } } },
+    });
+  }
+  for (let r = 1; r <= poData.length; r++) {
+    for (let c = 0; c < 6; c++) {
+      setCellStyle(wsPO, XLSX.utils.encode_cell({ r, c }), {
+        font: { name: "Calibri", sz: 10, color: { rgb: "1F2937" } },
+        alignment: {
+          horizontal: c === 5 ? "right" : (c <= 2 ? "center" : "left"),
+          vertical: "center",
+        },
+        border: { bottom: { style: "thin", color: { rgb: "F3F4F6" } } },
+      });
+    }
+  }
   XLSX.utils.book_append_sheet(wb, wsPO, "PO");
 
   // ==================== SHEET 2: BOM ====================
@@ -581,6 +797,49 @@ export async function exportPlanToExcel(
     { wch: 55 }, { wch: 35 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 15 },
     { wch: 12 }, { wch: 60 },
   ];
+  tabColorMap["BOM"] = "334155";
+  for (let c = 0; c < 14; c++) {
+    setCellStyle(wsBOM, XLSX.utils.encode_cell({ r: 0, c }), {
+      fill: { fgColor: { rgb: "1E293B" } },
+      font: { name: "Calibri", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: { bottom: { style: "medium", color: { rgb: "0F172A" } } },
+    });
+  }
+  for (let r = 1; r <= bomData.length; r++) {
+    const rowObj = bomData[r - 1];
+    const isHeaderRow = rowObj && rowObj.Level === "HEADER";
+    const isInfoRow = rowObj && rowObj["No SPK"] === "INFORMASI";
+    for (let c = 0; c < 14; c++) {
+      if (isHeaderRow) {
+        setCellStyle(wsBOM, XLSX.utils.encode_cell({ r, c }), {
+          fill: { fgColor: { rgb: "E2E8F0" } },
+          font: { name: "Calibri", sz: 10, bold: true, color: { rgb: "0F172A" } },
+          border: { top: { style: "thin", color: { rgb: "CBD5E1" } }, bottom: { style: "thin", color: { rgb: "CBD5E1" } } },
+        });
+      } else if (isInfoRow) {
+        setCellStyle(wsBOM, XLSX.utils.encode_cell({ r, c }), {
+          font: { name: "Calibri", sz: 9, italic: true, color: { rgb: "64748B" } },
+        });
+      } else {
+        const isStatusCol = c === 12;
+        const statusVal = rowObj && rowObj.Status;
+        if (isStatusCol && statusVal) {
+          setCellStyle(wsBOM, XLSX.utils.encode_cell({ r, c }), {
+            fill: { fgColor: { rgb: statusVal === "KURANG" ? "FEE2E2" : "D1FAE5" } },
+            font: { name: "Calibri", sz: 10, bold: true, color: { rgb: statusVal === "KURANG" ? "991B1B" : "065F46" } },
+            alignment: { horizontal: "center", vertical: "center" },
+            border: { bottom: { style: "thin", color: { rgb: "F3F4F6" } } },
+          });
+        } else {
+          setCellStyle(wsBOM, XLSX.utils.encode_cell({ r, c }), {
+            font: { name: "Calibri", sz: 10, color: { rgb: "1F2937" } },
+            border: { bottom: { style: "thin", color: { rgb: "F3F4F6" } } },
+          });
+        }
+      }
+    }
+  }
   XLSX.utils.book_append_sheet(wb, wsBOM, "BOM");
 
   // ==================== SHEET PER DEPARTEMEN ====================
@@ -656,48 +915,58 @@ export async function exportPlanToExcel(
   const sortedDepartments = Array.from(finalMaterialsByDept.keys()).sort();
 
   const deptColWidthsFull = [
-    { wch: 32 }, // Col 0: Kode Barang (File Tree)
-    { wch: 45 }, // Col 1: Nama Barang
+    { wch: 32 }, // Col 0: Kode Barang (Tree)
+    { wch: 40 }, // Col 1: Nama Barang
     { wch: 25 }, // Col 2: Nama China
-    { wch: 12 }, // Col 3: Tipe Item (SPK / HASIL / BAHAN)
-    { wch: 12 }, // Col 4: Level BOM
-    { wch: 15 }, // Col 5: Departemen
-    { wch: 12 }, // Col 6: Qty / Unit
-    { wch: 15 }, // Col 7: Qty Butuh
-    { wch: 20 }, // Col 8: Total Butuh (Se-Dept)
-    { wch: 18 }, // Col 9: Stok Wincp (Real)
-    { wch: 15 }, // Col 10: Stok Akhir
-    { wch: 15 }, // Col 11: Sisa Stok
-    { wch: 13 }, // Col 12: Status Stok
-    { wch: 20 }, // Col 13: Kode Barang Induk
-    { wch: 18 }, // Col 14: No SPK
-    { wch: 35 }, // Col 15: Keterangan / Variant
+    { wch: 25 }, // Col 3: Spec
+    { wch: 20 }, // Col 4: Bahan
+    { wch: 18 }, // Col 5: Warna China
+    { wch: 12 }, // Col 6: Tipe Item (SPK / HASIL / BAHAN)
+    { wch: 12 }, // Col 7: Level BOM
+    { wch: 15 }, // Col 8: Departemen
+    { wch: 12 }, // Col 9: Qty / Unit
+    { wch: 16 }, // Col 10: Total Kebutuhan
+    { wch: 20 }, // Col 11: Qty Diambil PO Lain
+    { wch: 18 }, // Col 12: Stok Wincp (Real)
+    { wch: 15 }, // Col 13: Stok Akhir
+    { wch: 20 }, // Col 14: Sisa Setelah Produksi
+    { wch: 14 }, // Col 15: Status Stok
+    { wch: 20 }, // Col 16: Kode Barang Induk
+    { wch: 18 }, // Col 17: No SPK
+    { wch: 35 }, // Col 18: Keterangan / Variant
   ];
 
   const deptColWidthsSimple = [
-    { wch: 32 }, // Col 0: Kode Barang (File Tree)
-    { wch: 45 }, // Col 1: Nama Barang
-    { wch: 12 }, // Col 2: Qty / Unit
-    { wch: 15 }, // Col 3: Qty Butuh
-    { wch: 20 }, // Col 4: Total Butuh (Se-Dept)
-    { wch: 18 }, // Col 5: Stok Real (Wincp)
-    { wch: 15 }, // Col 6: Sisa Stok
-    { wch: 13 }, // Col 7: Status Stok
+    { wch: 32 }, // Col 0: Kode Barang (Tree)
+    { wch: 40 }, // Col 1: Nama Barang
+    { wch: 25 }, // Col 2: Nama China
+    { wch: 25 }, // Col 3: Spec
+    { wch: 20 }, // Col 4: Bahan
+    { wch: 18 }, // Col 5: Warna China
+    { wch: 12 }, // Col 6: Qty / Unit
+    { wch: 16 }, // Col 7: Total Kebutuhan
+    { wch: 20 }, // Col 8: Qty Diambil PO Lain
+    { wch: 18 }, // Col 9: Stok Gudang (Real)
+    { wch: 20 }, // Col 10: Sisa Setelah Produksi
+    { wch: 14 }, // Col 11: Status Stok
   ];
 
   const headersDeptTreeFull: Cell[] = [
     "Kode Barang",
     "Nama Barang",
     "Nama China",
+    "Spec",
+    "Bahan",
+    "Warna China",
     "Tipe Item",
     "Level BOM",
     "Departemen",
     "Qty / Unit",
-    "Qty Butuh",
-    "Total Butuh (Se-Dept)",
+    "Total Kebutuhan",
+    "Qty Diambil PO Lain",
     "Stok Wincp (Real)",
     "Stok Akhir",
-    "Sisa Stok",
+    "Sisa Setelah Produksi",
     "Status Stok",
     "Kode Barang Induk",
     "No SPK",
@@ -707,11 +976,15 @@ export async function exportPlanToExcel(
   const headersDeptTreeSimple: Cell[] = [
     "Kode Barang",
     "Nama Barang",
+    "Nama China",
+    "Spec",
+    "Bahan",
+    "Warna China",
     "Qty / Unit",
-    "Qty Butuh",
-    "Total Butuh (Se-Dept)",
-    "Stok Real (Wincp)",
-    "Sisa Stok",
+    "Total Kebutuhan",
+    "Qty Diambil PO Lain",
+    "Stok Gudang (Real)",
+    "Sisa Setelah Produksi",
     "Status Stok",
   ];
 
@@ -805,7 +1078,7 @@ export async function exportPlanToExcel(
       { level: 0 }, // Row 5: Table Header
     ];
 
-    const merges: XLSX.Range[] = [
+    const merges: XLSXTypes.Range[] = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: headersDeptTree.length - 1 } },
       { s: { r: 1, c: 0 }, e: { r: 1, c: headersDeptTree.length - 1 } },
       { s: { r: 2, c: 0 }, e: { r: 2, c: headersDeptTree.length - 1 } },
@@ -832,35 +1105,43 @@ export async function exportPlanToExcel(
 
         // Baris Header Folder SPK (Root level) menggunakan Kode Barang
         const spkTitle = `📁 ${barangJadi.Kode_Barang}`;
+        const masterBJ = masterOf(normalizeItemId(barangJadi.Kode_Barang));
         if (isSimple) {
           deptTreeRows.push([
-            spkTitle,                                        // Col 0: Kode Barang (Tree)
-            barangJadi.Nama_PO || barangJadi.Kode_Barang,    // Col 1: Nama Barang
-            1,                                               // Col 2: Qty / Unit
-            barangJadi.QTY,                                  // Col 3: Qty Butuh
-            barangJadi.QTY,                                  // Col 4: Total Butuh (Se-Dept)
-            "",                                              // Col 5: Stok Real (Wincp)
-            "",                                              // Col 6: Sisa Stok
-            "-",                                             // Col 7: Status Stok
+            spkTitle,                                                    // Col 0: Kode Barang (Tree)
+            barangJadi.Nama_PO || barangJadi.Kode_Barang,                // Col 1: Nama Barang
+            masterBJ.namecina || "",                                     // Col 2: Nama China
+            masterBJ.spec !== "-" ? masterBJ.spec : "",                  // Col 3: Spec
+            masterBJ.bahan !== "-" ? masterBJ.bahan : "",                // Col 4: Bahan
+            masterBJ.warnac !== "-" ? masterBJ.warnac : "",              // Col 5: Warna China
+            1,                                                           // Col 6: Qty / Unit
+            barangJadi.QTY,                                              // Col 7: Total Kebutuhan
+            "",                                                          // Col 8: Qty Diambil PO Lain
+            "",                                                          // Col 9: Stok Gudang (Real)
+            "",                                                          // Col 10: Sisa Setelah Produksi
+            "-",                                                         // Col 11: Status Stok
           ]);
         } else {
           deptTreeRows.push([
-            spkTitle,                                        // Col 0: Kode Barang (Tree)
-            barangJadi.Nama_PO || barangJadi.Kode_Barang,    // Col 1: Nama Barang
-            "",                                              // Col 2: Nama China
-            "SPK",                                           // Col 3: Tipe Item
-            "Level 0",                                       // Col 4: Level BOM
-            normTargetDept,                                  // Col 5: Departemen
-            1,                                               // Col 6: Qty / Unit
-            barangJadi.QTY,                                  // Col 7: Qty Butuh
-            barangJadi.QTY,                                  // Col 8: Total Butuh (Se-Dept)
-            "",                                              // Col 9: Stok Wincp (Real)
-            "",                                              // Col 10: Stok Akhir
-            "",                                              // Col 11: Sisa Stok
-            "-",                                             // Col 12: Status Stok
-            "-",                                             // Col 13: Kode Barang Induk
-            group.No_SPK,                                    // Col 14: No SPK
-            `Target Order SPK: ${barangJadi.QTY.toLocaleString()} Unit`, // Col 15: Keterangan
+            spkTitle,                                                    // Col 0: Kode Barang (Tree)
+            barangJadi.Nama_PO || barangJadi.Kode_Barang,                // Col 1: Nama Barang
+            masterBJ.namecina || "",                                     // Col 2: Nama China
+            masterBJ.spec !== "-" ? masterBJ.spec : "",                  // Col 3: Spec
+            masterBJ.bahan !== "-" ? masterBJ.bahan : "",                // Col 4: Bahan
+            masterBJ.warnac !== "-" ? masterBJ.warnac : "",              // Col 5: Warna China
+            "SPK",                                                       // Col 6: Tipe Item
+            "Level 0",                                                   // Col 7: Level BOM
+            normTargetDept,                                              // Col 8: Departemen
+            1,                                                           // Col 9: Qty / Unit
+            barangJadi.QTY,                                              // Col 10: Total Kebutuhan
+            "",                                                          // Col 11: Qty Diambil PO Lain
+            "",                                                          // Col 12: Stok Wincp (Real)
+            "",                                                          // Col 13: Stok Akhir
+            "",                                                          // Col 14: Sisa Setelah Produksi
+            "-",                                                         // Col 15: Status Stok
+            "-",                                                         // Col 16: Kode Barang Induk
+            group.No_SPK,                                                // Col 17: No SPK
+            `Target Order SPK: ${barangJadi.QTY.toLocaleString()} Unit`, // Col 18: Keterangan
           ]);
         }
         outRowMeta.push({ level: 0 });
@@ -883,7 +1164,9 @@ export async function exportPlanToExcel(
           const totalSeDept = deptTotalMap.get(currId) ?? neededThisLine;
           const stockWincp = stockRow?.SaldoAkhirFisik || 0;
           const stockAkhir = stockRow?.SaldoAkhir || 0;
-          const sisaStok = stockWincp - totalSeDept;
+          const reservedData = reservationsByItem.get(currId);
+          const qtyReserved = reservedData?.totalQty || 0;
+          const sisaStok = stockWincp - totalSeDept - qtyReserved;
 
           const prevLevel = displayedItems.get(currId);
           const isDuplicate = prevLevel !== undefined && prevLevel !== currLevel;
@@ -895,7 +1178,7 @@ export async function exportPlanToExcel(
             tipeItem = "HASIL";
           }
 
-          const statusStock = stockWincp >= totalSeDept ? "AMAN" : stockWincp > 0 ? "KURANG" : "HABIS";
+          const statusStock = sisaStok >= 0 ? "AMAN" : stockWincp > 0 ? "KURANG" : "HABIS";
 
           const branchChar = isDuplicate ? "↳ " : isLast ? "└── " : "├── ";
           let icon = "";
@@ -919,36 +1202,50 @@ export async function exportPlanToExcel(
           }
 
           const variantInfo = getVariantInfo(currId);
+          const reservedDetails = reservedData && reservedData.spkList.size > 0
+            ? Array.from(reservedData.spkList).map(s => `${s.namaPO} (${s.qtyReserved.toLocaleString()})`).join(", ")
+            : "";
+          const reservedNote = reservedDetails ? `Reserved PO Lain: ${reservedDetails}` : "";
+          const fullNotes = [variantInfo, calcNote, reservedNote].filter(Boolean).join(" | ");
+
+          const masterItem = masterOf(currId);
 
           if (isSimple) {
             deptTreeRows.push([
-              treeCol,                                       // Col 0: Kode Barang (Tree)
-              curr.ItemName || curr.ItemID,                  // Col 1: Nama Barang
-              curr.Qty,                                      // Col 2: Qty / Unit
-              neededThisLine,                                // Col 3: Qty Butuh
-              totalSeDept,                                   // Col 4: Total Butuh (Se-Dept)
-              stockWincp,                                    // Col 5: Stok Real (Wincp)
-              sisaStok,                                      // Col 6: Sisa Stok
-              statusStock,                                   // Col 7: Status Stok
+              treeCol,                                                   // Col 0: Kode Barang (Tree)
+              curr.ItemName || curr.ItemID,                              // Col 1: Nama Barang
+              masterItem.namecina || curr.ItemName2 || "",               // Col 2: Nama China
+              masterItem.spec !== "-" ? masterItem.spec : "",            // Col 3: Spec
+              masterItem.bahan !== "-" ? masterItem.bahan : "",          // Col 4: Bahan
+              masterItem.warnac !== "-" ? masterItem.warnac : "",        // Col 5: Warna China
+              curr.Qty,                                                  // Col 6: Qty / Unit
+              totalSeDept,                                               // Col 7: Total Kebutuhan
+              qtyReserved > 0 ? qtyReserved : 0,                         // Col 8: Qty Diambil PO Lain
+              stockWincp,                                                // Col 9: Stok Gudang (Real)
+              sisaStok,                                                  // Col 10: Sisa Setelah Produksi
+              statusStock,                                               // Col 11: Status Stok
             ]);
           } else {
             deptTreeRows.push([
-              treeCol,                                       // Col 0: Kode Barang (Tree)
-              curr.ItemName || curr.ItemID,                  // Col 1: Nama Barang
-              curr.ItemName2 || "",                          // Col 2: Nama China
-              tipeItem,                                      // Col 3: Tipe Item
-              `Level ${curr.Level}`,                         // Col 4: Level BOM
-              curr.Departemen || "-",                        // Col 5: Departemen
-              curr.Qty,                                      // Col 6: Qty / Unit
-              neededThisLine,                                // Col 7: Qty Butuh
-              totalSeDept,                                   // Col 8: Total Butuh (Se-Dept)
-              stockWincp,                                    // Col 9: Stok Wincp (Real)
-              stockAkhir,                                    // Col 10: Stok Akhir
-              sisaStok,                                      // Col 11: Sisa Stok
-              statusStock,                                   // Col 12: Status Stok
-              node.parentKodeBarang,                         // Col 13: Kode Barang Induk
-              group.No_SPK,                                  // Col 14: No SPK
-              variantInfo ? `${variantInfo} | ${calcNote}` : calcNote, // Col 15: Keterangan
+              treeCol,                                                   // Col 0: Kode Barang (Tree)
+              curr.ItemName || curr.ItemID,                              // Col 1: Nama Barang
+              masterItem.namecina || curr.ItemName2 || "",               // Col 2: Nama China
+              masterItem.spec !== "-" ? masterItem.spec : "",            // Col 3: Spec
+              masterItem.bahan !== "-" ? masterItem.bahan : "",          // Col 4: Bahan
+              masterItem.warnac !== "-" ? masterItem.warnac : "",        // Col 5: Warna China
+              tipeItem,                                                  // Col 6: Tipe Item
+              `Level ${curr.Level}`,                                     // Col 7: Level BOM
+              curr.Departemen || "-",                                    // Col 8: Departemen
+              curr.Qty,                                                  // Col 9: Qty / Unit
+              totalSeDept,                                               // Col 10: Total Kebutuhan
+              qtyReserved > 0 ? qtyReserved : 0,                         // Col 11: Qty Diambil PO Lain
+              stockWincp,                                                // Col 12: Stok Wincp (Real)
+              stockAkhir,                                                // Col 13: Stok Akhir
+              sisaStok,                                                  // Col 14: Sisa Setelah Produksi
+              statusStock,                                               // Col 15: Status Stok
+              node.parentKodeBarang,                                     // Col 16: Kode Barang Induk
+              group.No_SPK,                                              // Col 17: No SPK
+              fullNotes,                                                 // Col 18: Keterangan
             ]);
           }
 
@@ -1025,7 +1322,200 @@ export async function exportPlanToExcel(
     wsDept["!merges"] = merges;
     wsDept["!rows"] = outRowMeta;
 
+    const theme = getDeptTheme(dept);
+    const numCols = headersDeptTree.length;
+
+    // Row 0: Banner Judul (Merged A1..<col>1)
+    for (let c = 0; c < numCols; c++) {
+      setCellStyle(wsDept, XLSX.utils.encode_cell({ r: 0, c }), {
+        fill: { fgColor: { rgb: theme.bannerFill } },
+        font: { name: "Calibri", sz: 12, bold: true, color: { rgb: theme.bannerFont } },
+        alignment: { vertical: "center", indent: 1 },
+      });
+    }
+
+    // Row 1..3: Meta Info (Export info)
+    for (let r = 1; r <= 3; r++) {
+      for (let c = 0; c < numCols; c++) {
+        setCellStyle(wsDept, XLSX.utils.encode_cell({ r, c }), {
+          font: { name: "Calibri", sz: 9, italic: true, color: { rgb: "4B5563" } },
+          alignment: { vertical: "center" },
+        });
+      }
+    }
+
+    // Row 5: Table Header
+    for (let c = 0; c < numCols; c++) {
+      setCellStyle(wsDept, XLSX.utils.encode_cell({ r: 5, c }), {
+        fill: { fgColor: { rgb: theme.headerFill } },
+        font: { name: "Calibri", sz: 10, bold: true, color: { rgb: theme.headerFont } },
+        alignment: { horizontal: "center", vertical: "center", wrapText: true },
+        border: {
+          top: { style: "thin", color: { rgb: "374151" } },
+          bottom: { style: "medium", color: { rgb: "111827" } },
+          left: { style: "thin", color: { rgb: "374151" } },
+          right: { style: "thin", color: { rgb: "374151" } },
+        },
+      });
+    }
+
+    // Row 6+: Data Rows
+    const statusColIdx = isSimple ? 11 : 15;
+    const qtyReservedColIdx = isSimple ? 8 : 11;
+    const sisaColIdx = isSimple ? 10 : 14;
+    const deptColIdx = isSimple ? -1 : 8;
+
+    for (let i = 0; i < deptTreeRows.length; i++) {
+      const r = 6 + i;
+      const row = deptTreeRows[i];
+      if (!row || row.length === 0) continue;
+
+      const firstCell = String(row[0] || "").trim();
+      const isFolderSPK = firstCell.startsWith("📁");
+      const isSummaryRow = firstCell.startsWith("TOTAL KEBUTUHAN MATERIAL DEPARTEMEN");
+      const isLegend =
+        firstCell.startsWith("LEGENDA") ||
+        firstCell.startsWith("📁 [") ||
+        firstCell.startsWith("📦") ||
+        firstCell.startsWith("📄") ||
+        firstCell.startsWith("↳") ||
+        firstCell.startsWith("Pohon") ||
+        firstCell.startsWith("Tombol") ||
+        firstCell.startsWith("Tidak ada item");
+
+      if (isFolderSPK) {
+        for (let c = 0; c < numCols; c++) {
+          setCellStyle(wsDept, XLSX.utils.encode_cell({ r, c }), {
+            fill: { fgColor: { rgb: theme.folderFill } },
+            font: { name: "Calibri", sz: 10, bold: true, color: { rgb: theme.folderFont } },
+            border: {
+              top: { style: "thin", color: { rgb: theme.tabColor } },
+              bottom: { style: "thin", color: { rgb: theme.tabColor } },
+            },
+            alignment: {
+              horizontal: c === 0 || c === 1 ? "left" : "center",
+              vertical: "center",
+            },
+          });
+        }
+      } else if (isSummaryRow) {
+        for (let c = 0; c < numCols; c++) {
+          setCellStyle(wsDept, XLSX.utils.encode_cell({ r, c }), {
+            fill: { fgColor: { rgb: theme.folderFill } },
+            font: { name: "Calibri", sz: 11, bold: true, color: { rgb: theme.headerFill } },
+            alignment: { horizontal: "center", vertical: "center" },
+            border: {
+              top: { style: "medium", color: { rgb: theme.tabColor } },
+              bottom: { style: "double", color: { rgb: theme.tabColor } },
+            },
+          });
+        }
+      } else if (isLegend) {
+        for (let c = 0; c < numCols; c++) {
+          setCellStyle(wsDept, XLSX.utils.encode_cell({ r, c }), {
+            fill: { fgColor: { rgb: "F8FAFC" } },
+            font: { name: "Calibri", sz: 9, italic: true, color: { rgb: "475569" } },
+            alignment: { vertical: "center" },
+          });
+        }
+      } else {
+        // Regular material row
+        for (let c = 0; c < numCols; c++) {
+          const val = row[c];
+          const isNumeric = isSimple ? (c >= 6 && c <= 10) : (c >= 9 && c <= 14);
+          const isCenter = isSimple
+            ? (c === 5 || c === 11)
+            : (c === 5 || c === 6 || c === 7 || c === 8 || c === 15 || c === 17);
+
+          const cellStyle: any = {
+            font: { name: "Calibri", sz: 10, color: { rgb: "1F2937" } },
+            alignment: {
+              horizontal: isNumeric ? "right" : isCenter ? "center" : "left",
+              vertical: "center",
+            },
+            border: {
+              bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+              right: { style: "thin", color: { rgb: "F3F4F6" } },
+            },
+          };
+
+          // Badge warna per departemen di kolom Tree (Kolom 0: Kode Barang)
+          // Contoh: │   ├── 📄 [INJEKSI] LC-02B001 -> diberi warna sesuai departemen INJEKSI
+          if (c === 0 && val) {
+            const valStr = String(val);
+            const otherDeptMatch = valStr.match(/📄\s*\[(.*?)\]/);
+            if (otherDeptMatch) {
+              const otherDeptName = otherDeptMatch[1];
+              const otherDeptTheme = getDeptTheme(otherDeptName);
+              cellStyle.fill = { fgColor: { rgb: otherDeptTheme.folderFill } };
+              cellStyle.font = {
+                name: "Calibri",
+                sz: 10,
+                bold: true,
+                color: { rgb: otherDeptTheme.headerFill },
+              };
+              cellStyle.border = {
+                top: { style: "thin", color: { rgb: otherDeptTheme.tabColor } },
+                bottom: { style: "thin", color: { rgb: otherDeptTheme.tabColor } },
+                left: { style: "thin", color: { rgb: otherDeptTheme.tabColor } },
+                right: { style: "thin", color: { rgb: otherDeptTheme.tabColor } },
+              };
+            } else if (valStr.includes("📦")) {
+              // Sub-rakitan utama (HASIL) di departemen ini
+              cellStyle.font = {
+                name: "Calibri",
+                sz: 10,
+                bold: true,
+                color: { rgb: theme.headerFill },
+              };
+            }
+          }
+
+          // Badge Departemen di mode Full jika dari departemen lain
+          if (c === deptColIdx && val && val !== "-") {
+            const dTh = getDeptTheme(String(val));
+            cellStyle.fill = { fgColor: { rgb: dTh.folderFill } };
+            cellStyle.font = { name: "Calibri", sz: 9, bold: true, color: { rgb: dTh.headerFill } };
+          }
+
+          // Highlight Qty Diambil PO Lain jika ada
+          if (c === qtyReservedColIdx && Number(val) > 0) {
+            cellStyle.fill = { fgColor: { rgb: "FEF3C7" } };
+            cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "92400E" } };
+          }
+
+          // Format Sisa Stok
+          if (c === sisaColIdx && val !== "" && val != null) {
+            const num = Number(val);
+            if (num < 0) {
+              cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "DC2626" } };
+            } else if (num > 0) {
+              cellStyle.font = { name: "Calibri", sz: 10, color: { rgb: "047857" } };
+            }
+          }
+
+          // Highlight Status Stok
+          if (c === statusColIdx && val) {
+            const sStr = String(val).trim().toUpperCase();
+            if (sStr === "AMAN") {
+              cellStyle.fill = { fgColor: { rgb: "D1FAE5" } };
+              cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "065F46" } };
+            } else if (sStr === "KURANG") {
+              cellStyle.fill = { fgColor: { rgb: "FEE2E2" } };
+              cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "991B1B" } };
+            } else if (sStr === "HABIS") {
+              cellStyle.fill = { fgColor: { rgb: "FEE2E2" } };
+              cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "7F1D1D" } };
+            }
+          }
+
+          setCellStyle(wsDept, XLSX.utils.encode_cell({ r, c }), cellStyle);
+        }
+      }
+    }
+
     const sheetName = getUniqueSheetName(wb, dept.toUpperCase());
+    tabColorMap[sheetName] = theme.tabColor;
     XLSX.utils.book_append_sheet(wb, wsDept, sheetName);
   }
 
@@ -1069,6 +1559,98 @@ export async function exportPlanToExcel(
     { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
     { s: { r: 2, c: 0 }, e: { r: 2, c: 4 } },
   ];
+
+  tabColorMap["REKAP_PER_DEPARTEMEN"] = "0D9488";
+
+  // Banner judul Row 0
+  for (let c = 0; c < 5; c++) {
+    setCellStyle(wsSummary, XLSX.utils.encode_cell({ r: 0, c }), {
+      fill: { fgColor: { rgb: "0F766E" } },
+      font: { name: "Calibri", sz: 12, bold: true, color: { rgb: "FFFFFF" } },
+      alignment: { vertical: "center", indent: 1 },
+    });
+  }
+  // Meta info Row 1..2
+  for (let r = 1; r <= 2; r++) {
+    for (let c = 0; c < 5; c++) {
+      setCellStyle(wsSummary, XLSX.utils.encode_cell({ r, c }), {
+        font: { name: "Calibri", sz: 9, italic: true, color: { rgb: "4B5563" } },
+        alignment: { vertical: "center" },
+      });
+    }
+  }
+  // Table header Row 4
+  for (let c = 0; c < 5; c++) {
+    setCellStyle(wsSummary, XLSX.utils.encode_cell({ r: 4, c }), {
+      fill: { fgColor: { rgb: "115E59" } },
+      font: { name: "Calibri", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: {
+        top: { style: "thin", color: { rgb: "134E4A" } },
+        bottom: { style: "medium", color: { rgb: "042F2E" } },
+      },
+    });
+  }
+  // Data rows
+  for (let idx = 0; idx < sortedDepartments.length; idx++) {
+    const r = 5 + idx;
+    const deptName = sortedDepartments[idx];
+    const dTheme = getDeptTheme(deptName);
+
+    // Col 0: Departemen (Badge warna tema departemen!)
+    setCellStyle(wsSummary, XLSX.utils.encode_cell({ r, c: 0 }), {
+      fill: { fgColor: { rgb: dTheme.badgeFill } },
+      font: { name: "Calibri", sz: 10, bold: true, color: { rgb: dTheme.badgeFont } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: {
+        top: { style: "thin", color: { rgb: "E5E7EB" } },
+        bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+      },
+    });
+
+    // Col 1..3: Jumlah Material, Total Kebutuhan, Total Sisa Stok
+    for (let c = 1; c <= 3; c++) {
+      setCellStyle(wsSummary, XLSX.utils.encode_cell({ r, c }), {
+        font: { name: "Calibri", sz: 10, color: { rgb: "1F2937" } },
+        alignment: { horizontal: "right", vertical: "center" },
+        border: {
+          bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+          right: { style: "thin", color: { rgb: "F3F4F6" } },
+        },
+      });
+    }
+
+    // Col 4: Status (KELEBIHAN / KEKURANGAN / CUKUP)
+    const statusVal = String(allDeptSummary[r]?.[4] || "");
+    const isKurang = statusVal === "KEKURANGAN";
+    const isLebih = statusVal === "KELEBIHAN";
+    setCellStyle(wsSummary, XLSX.utils.encode_cell({ r, c: 4 }), {
+      fill: { fgColor: { rgb: isKurang ? "FEE2E2" : isLebih ? "D1FAE5" : "F3F4F6" } },
+      font: {
+        name: "Calibri",
+        sz: 10,
+        bold: true,
+        color: { rgb: isKurang ? "991B1B" : isLebih ? "065F46" : "374151" },
+      },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: { bottom: { style: "thin", color: { rgb: "E5E7EB" } } },
+    });
+  }
+
+  // Row Total Keseluruhan
+  const totalRowIdx = 5 + sortedDepartments.length + 1;
+  for (let c = 0; c < 5; c++) {
+    setCellStyle(wsSummary, XLSX.utils.encode_cell({ r: totalRowIdx, c }), {
+      fill: { fgColor: { rgb: "E2E8F0" } },
+      font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "0F172A" } },
+      alignment: { horizontal: c === 0 ? "left" : c === 4 ? "center" : "right", vertical: "center" },
+      border: {
+        top: { style: "medium", color: { rgb: "94A3B8" } },
+        bottom: { style: "double", color: { rgb: "94A3B8" } },
+      },
+    });
+  }
+
   XLSX.utils.book_append_sheet(wb, wsSummary, "REKAP_PER_DEPARTEMEN");
 
   // ==================== SHEET KETERANGAN ====================
@@ -1084,9 +1666,11 @@ export async function exportPlanToExcel(
     ["No", "Fitur", "Keterangan"],
     ["1", "Format File Tree", "Struktur tunggal terpadu berhierarki (Folder SPK 📁 -> Sub-rakitan 📦 -> Bahan 📄)"],
     ["2", "Outline Grouping", "Tombol [1] [2] [3] di sebelah kiri margin Excel untuk expand / collapse pohon rakitan"],
-    ["3", "Qty Butuh vs Total Butuh", "Kolom 'Qty Butuh' untuk alokasi pengerjaan rakitan tersebut, sedangkan 'Total Butuh (Se-Dept)' untuk acuan penarikan gudang"],
-    ["4", "Asal Pasokan", "Bahan masuk dari departemen lain ditandai dengan label [DEPT] (misal: [SPRAY], [MOULDING], [GUDANG])"],
-    ["5", "Mode Template", `Format saat ini: ${isSimple ? "SIMPEL (8 Kolom ringkas untuk lantai produksi)" : "DETAIL (16 Kolom lengkap)"}`],
+    ["3", "Kebutuhan Material", "Kolom 'Total Kebutuhan' adalah total jumlah material yang harus disiapkan untuk target SPK ini"],
+    ["4", "Qty Diambil PO Lain", "Jumlah stok material yang telah dialokasikan / di-reservasi oleh SPK atau PO lain di luar yang sedang direncanakan"],
+    ["5", "Sisa Setelah Produksi", "Dihitung dari: Stok Gudang (Real) - Total Kebutuhan - Qty Diambil PO Lain. Positif = AMAN, Negatif = KURANG"],
+    ["6", "Asal Pasokan", "Bahan masuk dari departemen lain ditandai dengan label [DEPT] (misal: [SPRAY], [MOULDING], [GUDANG])"],
+    ["7", "Mode Template", `Format saat ini: ${isSimple ? "SIMPEL (12 Kolom ringkas dengan Spec, Nama China, Bahan, Warna China, Qty Diambil PO Lain)" : "DETAIL (19 Kolom lengkap)"}`],
     [""],
     ["C. PENJELASAN KHUSUS - MULTI LEVEL"],
     ["No", "Item", "Keterangan"],
@@ -1111,9 +1695,56 @@ export async function exportPlanToExcel(
     { s: { r: 15, c: 0 }, e: { r: 15, c: 2 } },
     { s: { r: 21, c: 0 }, e: { r: 21, c: 2 } },
   ];
+
+  tabColorMap["KETERANGAN"] = "6B7280";
+
+  // Banner judul Row 0
+  for (let c = 0; c < 3; c++) {
+    setCellStyle(wsKeterangan, XLSX.utils.encode_cell({ r: 0, c }), {
+      fill: { fgColor: { rgb: "374151" } },
+      font: { name: "Calibri", sz: 12, bold: true, color: { rgb: "FFFFFF" } },
+      alignment: { vertical: "center", indent: 1 },
+    });
+  }
+  // Section headers and tables
+  for (let r = 1; r < keteranganData.length; r++) {
+    const rData = keteranganData[r];
+    if (!rData || rData.length === 0) continue;
+    const fVal = String(rData[0] || "");
+    const isSectionHeader = fVal.startsWith("A.") || fVal.startsWith("B.") || fVal.startsWith("C.") || fVal.startsWith("D.");
+    const isTableHeader = fVal === "No" && rData[1] !== undefined;
+
+    if (isSectionHeader) {
+      for (let c = 0; c < 3; c++) {
+        setCellStyle(wsKeterangan, XLSX.utils.encode_cell({ r, c }), {
+          fill: { fgColor: { rgb: "F1F5F9" } },
+          font: { name: "Calibri", sz: 10, bold: true, color: { rgb: "1E293B" } },
+          border: { top: { style: "thin", color: { rgb: "CBD5E1" } }, bottom: { style: "thin", color: { rgb: "CBD5E1" } } },
+        });
+      }
+    } else if (isTableHeader) {
+      for (let c = 0; c < 3; c++) {
+        setCellStyle(wsKeterangan, XLSX.utils.encode_cell({ r, c }), {
+          fill: { fgColor: { rgb: "4B5563" } },
+          font: { name: "Calibri", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+          alignment: { horizontal: c === 0 ? "center" : "left", vertical: "center" },
+        });
+      }
+    } else if (rData.length > 1) {
+      for (let c = 0; c < 3; c++) {
+        setCellStyle(wsKeterangan, XLSX.utils.encode_cell({ r, c }), {
+          font: { name: "Calibri", sz: 10, color: { rgb: "334155" } },
+          alignment: { horizontal: c === 0 ? "center" : "left", vertical: "center" },
+          border: { bottom: { style: "thin", color: { rgb: "F1F5F9" } } },
+        });
+      }
+    }
+  }
+
   XLSX.utils.book_append_sheet(wb, wsKeterangan, "KETERANGAN");
 
-  const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  const rawBuffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  const buffer = await applyWorkbookTabColors(rawBuffer, tabColorMap);
   return { buffer, fileName };
 }
 
