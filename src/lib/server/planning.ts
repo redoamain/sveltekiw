@@ -43,6 +43,7 @@ export const daysAgoISO = (n: number) => {
 interface OrderRowDb {
   No_SPK: string;
   Tanggal_Order: Date;
+  Plan_Date?: Date;
   Nama_PO: string;
   Kode_Barang: string;
   QTY: number;
@@ -65,6 +66,7 @@ export async function getActiveOrders(
       SELECT TOP (10000)
         hd.[OrderID] AS No_SPK,
         hd.[OrderDate] AS Tanggal_Order,
+        COALESCE(hd.[DeliveryDate], hd.[DueDate], hd.[OrderDate]) AS Plan_Date,
         COALESCE(c.[CompanyName1], hd.[CompanyID], '') + CASE WHEN hd.[Remark] IS NOT NULL AND LTRIM(RTRIM(hd.[Remark])) <> '' THEN ' - ' + LTRIM(RTRIM(hd.[Remark])) ELSE '' END AS Nama_PO,
         dt.[ItemID] AS Kode_Barang,
         dt.[Itemname] AS Nama_Barang,
@@ -98,6 +100,7 @@ export async function getActiveOrders(
       SELECT TOP (10000)
         hd.[OrderID] AS No_SPK,
         hd.[OrderDate] AS Tanggal_Order,
+        COALESCE(hd.[PlanDate], hd.[OrderDate]) AS Plan_Date,
         hd.[Remark] AS Nama_PO,
         dt.[itemID] AS Kode_Barang,
         dt.[Kgs] AS QTY
@@ -130,6 +133,7 @@ export async function getActiveOrders(
     ...record,
     QTY: Number(record.QTY) || 0,
     Tanggal_Order: record.Tanggal_Order ? isoDate(new Date(record.Tanggal_Order)) : undefined,
+    Plan_Date: record.Plan_Date ? isoDate(new Date(record.Plan_Date)) : undefined,
     sourceType,
   }));
 }
@@ -218,6 +222,7 @@ export async function getActiveOrdersPaged(
         SELECT
           hd.[OrderID] AS No_SPK,
           hd.[OrderDate] AS Tanggal_Order,
+          COALESCE(hd.[DeliveryDate], hd.[DueDate], hd.[OrderDate]) AS Plan_Date,
           COALESCE(c.[CompanyName1], hd.[CompanyID], '') + CASE WHEN hd.[Remark] IS NOT NULL AND LTRIM(RTRIM(hd.[Remark])) <> '' THEN ' - ' + LTRIM(RTRIM(hd.[Remark])) ELSE '' END AS Nama_PO,
           dt.[ItemID] AS Kode_Barang,
           dt.[Itemname] AS Nama_Barang,
@@ -235,6 +240,7 @@ export async function getActiveOrdersPaged(
       ...r,
       QTY: Number(r.QTY) || 0,
       Tanggal_Order: r.Tanggal_Order ? isoDate(new Date(r.Tanggal_Order)) : undefined,
+      Plan_Date: r.Plan_Date ? isoDate(new Date(r.Plan_Date)) : undefined,
       sourceType: "so" as PlanningSourceType,
     }));
     return { rows, total, totalQty };
@@ -304,7 +310,7 @@ export async function getActiveOrdersPaged(
         value: id,
       }));
       const chunkQ = `
-        SELECT hd.[OrderID] AS No_SPK, hd.[OrderDate] AS Tanggal_Order, hd.[Remark] AS Nama_PO, dt.[itemID] AS Kode_Barang, dt.[Kgs] AS QTY
+        SELECT hd.[OrderID] AS No_SPK, hd.[OrderDate] AS Tanggal_Order, COALESCE(hd.[PlanDate], hd.[OrderDate]) AS Plan_Date, hd.[Remark] AS Nama_PO, dt.[itemID] AS Kode_Barang, dt.[Kgs] AS QTY
         FROM [cp].[dbo].[taPROrder] hd
         INNER JOIN [cp].[dbo].[taPROrderDt] dt ON hd.[OrderID]=dt.[OrderID] AND hd.[OrderType]=dt.[OrderType]
         WHERE hd.[OrderID] IN (${ph})
@@ -316,6 +322,7 @@ export async function getActiveOrdersPaged(
       ...r,
       QTY: Number(r.QTY) || 0,
       Tanggal_Order: r.Tanggal_Order ? isoDate(new Date(r.Tanggal_Order)) : undefined,
+      Plan_Date: r.Plan_Date ? isoDate(new Date(r.Plan_Date)) : undefined,
       sourceType: "spk" as PlanningSourceType,
     }));
     return { rows, total, totalQty };

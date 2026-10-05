@@ -851,7 +851,7 @@ export async function parseSpkExcelImport(fileBuffer: Buffer): Promise<ParsedSpk
       if (val.startsWith("<-")) continue;
 
       // Header Keterangan Part / Notes (cek duluan agar 'Keterangan Part' tidak kena ke 'PART')
-      if (val.includes("KET") || val.includes("REMARK") || val.includes("NOTE") || val.includes("DESC")) {
+      if (val.includes("KET") || val.includes("REMARK") || val.includes("NOTE") || val.includes("DESC") || val === "DOC" || val === "SPEC") {
         tempNotes = c;
         continue;
       }
@@ -862,9 +862,9 @@ export async function parseSpkExcelImport(fileBuffer: Buffer): Promise<ParsedSpk
         continue;
       }
 
-      // Header Qty: ada QTY / TARGET / JUMLAH / KG, tapi bukan tanggal target selesai
+      // Header Qty: ada QTY / TARGET / JUMLAH / KG / PLAN, tapi bukan tanggal target selesai
       if (
-        (val.includes("QTY") || val.includes("JUMLAH") || val.includes("KG") || val.includes("KUANTITAS") ||
+        (val.includes("QTY") || val.includes("JUMLAH") || val.includes("KG") || val.includes("KUANTITAS") || val === "PLAN" ||
          (val.includes("TARGET") && !val.includes("SELESAI") && !val.includes("DATE") && !val.includes("PLAN") && !val.includes("TANGGAL")))
       ) {
         tempQty = c;
@@ -884,6 +884,8 @@ export async function parseSpkExcelImport(fileBuffer: Buffer): Promise<ParsedSpk
          val.includes("ITEMID") ||
          val.includes("PART NO") ||
          val.includes("PART NUMBER") ||
+         val.includes("PRODUCT NO") ||
+         val.includes("PRODUCT NUMBER") ||
          (val.includes("KODE") && !val.includes("DEPT") && !val.includes("DEPARTEMEN")) ||
          val === "KODE" ||
          val === "ITEM")

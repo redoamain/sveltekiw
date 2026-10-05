@@ -100,6 +100,7 @@
 		ItemName2: '',
 		Spec: '',
 		bahan: '',
+		warna: '',
 		warnac: ''
 	});
 
@@ -116,6 +117,7 @@
 			ItemName2: '',
 			Spec: '',
 			bahan: '',
+			warna: '',
 			warnac: ''
 		};
 		isItemModalOpen = true;
@@ -134,7 +136,8 @@
 			ItemName2: String(item.namecina || item.ItemName2 || ''),
 			Spec: String(item.Spec || ''),
 			bahan: String(item.bahan || ''),
-			warnac: String(item.warna || item.warnac || '')
+			warna: String(item.warna || ''),
+			warnac: String(item.warnac || '')
 		};
 		isItemModalOpen = true;
 	}
@@ -157,6 +160,7 @@
 		SatuanKecil?: string;
 		Spec?: string;
 		bahan?: string;
+		warna?: string;
 		warnac?: string;
 		status: 'NEW' | 'EXISTS' | 'INVALID';
 		errorMessage?: string;
@@ -365,7 +369,8 @@
 						['ItemName', data.detail.ItemName, ''],
 						['namebc', data.detail.namebc || '-', 'font-mono text-xs'],
 						['Nama Cina (ItemName2)', data.detail.namecina || '-', ''],
-						['Warna (warnac)', data.detail.warna || '-', ''],
+						['Warna Indo (warna)', data.detail.warna || '-', 'font-mono font-bold'],
+						['Warna Mandarin (warnac)', data.detail.warnac || '-', ''],
 						['Departemen (Mark)', data.detail.Departemen || '-', ''],
 						['KodeJenis', data.detail.KodeJenis || '-', 'font-mono'],
 						['NamaJenis', data.detail.NamaJenis || '-', 'font-black uppercase'],
@@ -507,6 +512,11 @@
 								<TableCell class="font-mono text-xs">{r.namebc || '-'}</TableCell>
 								<TableCell>
 									<Badge variant="secondary" class="font-mono text-[10px]">{r.warna || '-'}</Badge>
+									{#if r.warnac && r.warnac !== r.warna}
+										<div class="text-[10px] text-muted-foreground truncate max-w-24 mt-0.5" title={r.warnac}>
+											{r.warnac}
+										</div>
+									{/if}
 								</TableCell>
 								<TableCell>
 									<Badge variant="secondary" class="font-mono text-[10px]">{r.Departemen || '-'}</Badge>
@@ -682,17 +692,39 @@
 				</datalist>
 			</div>
 
-			<!-- Warna (warnac) -->
+			<!-- Warna Indo (warna) -->
+			<div class="space-y-1">
+				<Label for="warna" class="font-black text-xs uppercase">
+					Warna Indo (warna)
+				</Label>
+				<input
+					id="warna"
+					name="warna"
+					list="warnaList"
+					bind:value={itemForm.warna}
+					maxlength="20"
+					placeholder="Contoh: HITAM, CHROME, NATURAL..."
+					class="w-full h-10 rounded-lg border-2 border-border bg-card px-3 text-xs font-bold uppercase brutal-shadow-sm focus:outline-none"
+				/>
+				<datalist id="warnaList">
+					{#each data.referenceData?.colors || [] as color}
+						<option value={color}></option>
+					{/each}
+				</datalist>
+				<p class="font-mono text-[10px] text-muted-foreground">Maksimal 20 karakter.</p>
+			</div>
+
+			<!-- Warna Mandarin (warnac) -->
 			<div class="space-y-1">
 				<Label for="warnac" class="font-black text-xs uppercase">
-					Warna
+					Warna Mandarin (warnac)
 				</Label>
 				<Input
 					id="warnac"
 					name="warnac"
 					bind:value={itemForm.warnac}
-					placeholder="Contoh: CHROME, BLACK, HITAM..."
-					class="h-10 border-2 font-bold uppercase"
+					placeholder="Contoh: 黑色, 铬色, 哑黑色..."
+					class="h-10 border-2 text-xs"
 				/>
 			</div>
 
@@ -849,6 +881,7 @@
 								<TableHead class="w-20">Status</TableHead>
 								<TableHead>Kode</TableHead>
 								<TableHead>Nama Barang</TableHead>
+								<TableHead>Warna</TableHead>
 								<TableHead>Jenis</TableHead>
 								<TableHead>Departemen</TableHead>
 								<TableHead>Satuan</TableHead>
@@ -870,6 +903,12 @@
 									</TableCell>
 									<TableCell class="font-mono font-black">{it.ItemID}</TableCell>
 									<TableCell class="font-bold max-w-44 truncate">{it.ItemName}</TableCell>
+									<TableCell>
+										<span class="font-mono text-[10px] font-bold">{it.warna || '-'}</span>
+										{#if it.warnac && it.warnac !== it.warna}
+											<span class="text-[10px] text-muted-foreground ml-1">({it.warnac})</span>
+										{/if}
+									</TableCell>
 									<TableCell class="font-mono">{it.KodeJenis}</TableCell>
 									<TableCell>{it.Mark || '-'}</TableCell>
 									<TableCell class="font-mono">{it.SatuanKecil || 'PCS'}</TableCell>

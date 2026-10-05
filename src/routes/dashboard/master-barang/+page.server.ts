@@ -25,7 +25,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	let detail: any = null;
 
 	const [referenceData, pagedResult] = await Promise.all([
-		getMasterReferenceData().catch(() => ({ kinds: [], departments: [], units: [] })),
+		getMasterReferenceData().catch(() => ({ kinds: [], departments: [], units: [], colors: [] })),
 		getMasterGoodsPaged(q || undefined, page, pageSize).catch((err: any) => {
 			error = err?.message || 'Gagal memuat master barang';
 			return { rows: [], total: 0 };
@@ -73,6 +73,7 @@ export const actions: Actions = {
 		const SatuanKecil = String(form.get('SatuanKecil') ?? '').trim().toUpperCase() || 'PCS';
 		const Spec = String(form.get('Spec') ?? '').trim() || undefined;
 		const bahan = String(form.get('bahan') ?? '').trim() || undefined;
+		const warna = String(form.get('warna') ?? '').trim().slice(0, 20) || undefined;
 		const warnac = String(form.get('warnac') ?? '').trim() || undefined;
 
 		if (!ItemID) {
@@ -95,6 +96,7 @@ export const actions: Actions = {
 			SatuanKecil,
 			Spec,
 			bahan,
+			warna,
 			warnac
 		};
 

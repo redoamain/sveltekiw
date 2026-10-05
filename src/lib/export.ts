@@ -25,7 +25,7 @@ export interface ExportPlanPayload {
   bomByKodeBarang: Map<string, BomItem[]>;
   stockRows: Map<string, StockRow>;
   reservations: StockReservation[];
-  mode?: "full" | "simple";
+  mode?: "full" | "simple" | "erp-china";
 }
 
 const sanitizeSheetName = (name: string): string => {
@@ -139,11 +139,26 @@ interface MaterialAgg {
   barangJadiSet: Map<string, { qty: number; nama: string; kode: string }>;
 }
 
+function extractChinaSpec(master?: { spec?: string; namecina?: string }): string {
+  if (!master) return "";
+  const namecina = master.namecina || "";
+  if (namecina.includes("|")) {
+    const afterBar = namecina.split("|").slice(1).join("|").trim();
+    const specPart = afterBar.split("+")[0].trim();
+    if (specPart) return specPart;
+  }
+  if (master.spec && master.spec !== "-" && !/^\d+[\*x]/i.test(master.spec.trim())) {
+    return master.spec.trim();
+  }
+  return "";
+}
+
 export async function exportPlanToExcel(
   payload: ExportPlanPayload,
 ): Promise<{ buffer: Buffer; fileName: string }> {
   const { groups, bomByKodeBarang, stockRows, reservations, mode = "full" } = payload;
   const isSimple = mode === "simple";
+  const isChina = mode === "erp-china";
   const today = new Date().toISOString().split("T")[0];
 
   if (groups.length === 0) {
@@ -153,7 +168,7 @@ export async function exportPlanToExcel(
   // ============ NAMA FILE ============
   const cleanName = (n: string, len: number) =>
     (n || "").replace(/[\\/*?:"<>|]/g, "").replace(/\s+/g, "_").substring(0, len);
-  const suffixMode = isSimple ? "_Simpel" : "";
+  const suffixMode = isChina ? "_ERP_China" : isSimple ? "_Simpel" : "";
   let fileName: string;
   if (groups.length === 1) {
     const g = groups[0];
@@ -173,12 +188,24 @@ export async function exportPlanToExcel(
     ),
   ).filter(Boolean);
 
-  const masterDataMap = new Map<string, { spec: string; warna: string; bahan: string }>();
-  if (allMaterialIds.length > 0) {
+  const allFinishedGoodsIds = groups.flatMap((g) =>
+    g.lines.map((l) => normalizeItemId(l.Kode_Barang)),
+  );
+  const allTargetIds = Array.from(
+    new Set([...allMaterialIds, ...allFinishedGoodsIds]),
+  ).filter(Boolean);
+
+  const masterDataMap = new Map<
+    string,
+    { name: string; namecina: string; spec: string; warna: string; bahan: string }
+  >();
+  if (allTargetIds.length > 0) {
     try {
-      const items = await getMasterItems(allMaterialIds);
+      const items = await getMasterItems(allTargetIds);
       items.forEach((m) => {
         masterDataMap.set(normalizeItemId(String(m.ItemID)), {
+          name: String(m.ItemName ?? ""),
+          namecina: String(m.namecina ?? ""),
           spec: String(m.Spec ?? "-"),
           warna: String(m.warna ?? "-"),
           bahan: String(m.bahan ?? "-"),
@@ -188,7 +215,88 @@ export async function exportPlanToExcel(
       // abaikan, default "-"
     }
   }
-  const masterOf = (id: string) => masterDataMap.get(id) ?? { spec: "-", warna: "-", bahan: "-" };
+  const masterOf = (id: string) =>
+    masterDataMap.get(id) ?? { name: "", namecina: "", spec: "-", warna: "-", bahan: "-" };
+
+  // ============ MODE ERP CHINA ============
+  if (isChina) {
+    const wbChina = XLSX.utils.book_new();
+    const rows: (string | number | null)[][] = [
+      ["PT. CITI PLUMB"],
+      [],
+      [],
+      ["生产单"],
+      [
+        "No",
+        "Doc",
+        "Product No",
+        "Product Name",
+        "Spec",
+        "Start",
+        "End",
+        null,
+        "Plan",
+        null,
+        "Complete",
+        "Remaining",
+      ],
+      [],
+    ];
+
+    let seq = 1;
+    for (const group of groups) {
+      for (const line of group.lines) {
+        const normId = normalizeItemId(line.Kode_Barang);
+        const master = masterOf(normId);
+        const doc = (group.Nama_PO || group.No_SPK || "").trim();
+        const productNo = line.Kode_Barang;
+        const productName = master.name || line.Nama_Barang || line.Kode_Barang;
+        const spec = extractChinaSpec(master);
+        const start = line.Tanggal_Order || today;
+        const end = line.Plan_Date || start;
+        const planQty = Number(line.QTY) || 0;
+        const completeQty = 0;
+        const remainingQty = planQty;
+
+        rows.push([
+          String(seq++),
+          doc,
+          productNo,
+          productName,
+          spec,
+          start,
+          end,
+          null,
+          planQty,
+          null,
+          completeQty,
+          remainingQty,
+        ]);
+      }
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [
+      { wch: 6 },  // A: No
+      { wch: 25 }, // B: Doc
+      { wch: 22 }, // C: Product No
+      { wch: 50 }, // D: Product Name
+      { wch: 25 }, // E: Spec
+      { wch: 14 }, // F: Start
+      { wch: 14 }, // G: End
+      { wch: 5 },  // H: (blank)
+      { wch: 12 }, // I: Plan
+      { wch: 5 },  // J: (blank)
+      { wch: 12 }, // K: Complete
+      { wch: 12 }, // L: Remaining
+    ];
+    XLSX.utils.book_append_sheet(wbChina, ws, "Sheet1");
+
+    return {
+      buffer: XLSX.write(wbChina, { type: "buffer", bookType: "xlsx" }) as Buffer,
+      fileName,
+    };
+  }
 
   // ============ RESERVASI item (kecuali SPK yang di-export) ============
   const selectedSPKSet = new Set(groups.map((g) => g.No_SPK));
@@ -1029,7 +1137,8 @@ export async function exportMasterGoodsToExcel(
     "ItemName",
     "namebc",
     "Nama Cina",
-    "Warna",
+    "Warna Indo",
+    "Warna Mandarin",
     "Departemen",
     "KodeJenis",
     "NamaJenis",
@@ -1051,6 +1160,7 @@ export async function exportMasterGoodsToExcel(
       r.namebc,
       r.namecina,
       r.warna,
+      r.warnac,
       r.Departemen,
       r.KodeJenis,
       r.NamaJenis,
@@ -1066,7 +1176,8 @@ export async function exportMasterGoodsToExcel(
     { wch: 32 }, // ItemName
     { wch: 16 }, // namebc
     { wch: 24 }, // namecina
-    { wch: 14 }, // warna
+    { wch: 16 }, // warna
+    { wch: 18 }, // warnac
     { wch: 14 }, // Departemen
     { wch: 12 }, // KodeJenis
     { wch: 22 }, // NamaJenis
@@ -1092,7 +1203,8 @@ export async function exportMasterGoodsToExcel(
     ["ItemName", "taGoods.ItemName", "Nama barang"],
     ["namebc", "taGoods.namebc", "Nama BC"],
     ["Nama Cina", "taGoods.ItemName2", "Nama Cina"],
-    ["Warna", "taGoods.warnac", "Warna"],
+    ["Warna Indo", "taGoods.warna", "Warna Indonesia"],
+    ["Warna Mandarin", "taGoods.warnac", "Warna Mandarin / Cina"],
     ["Departemen", "taGoods.Mark", "Departemen / Mark"],
     ["KodeJenis", "taGoods.KodeJenis", "Kode jenis"],
     ["NamaJenis", "taKindofGoods.NamaJenis", "Nama jenis (JOIN)"],

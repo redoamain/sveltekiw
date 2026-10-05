@@ -333,6 +333,7 @@
 						>
 							<option value="full">Format: Detail (16 Kolom)</option>
 							<option value="simple">Format: Simpel (8 Kolom)</option>
+							<option value="erp-china">Format: ERP China (生产单)</option>
 						</select>
 						<Button
 							type="submit"

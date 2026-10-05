@@ -177,6 +177,8 @@ export interface SpkLine {
   Kode_Barang: string;
   QTY: number;
   Tanggal_Order?: string;
+  Plan_Date?: string;
+  Nama_Barang?: string;
 }
 
 export interface SpkGroup {
@@ -196,6 +198,8 @@ export const groupOrdersBySpk = (orders: ProductionOrder[]): SpkGroup[] => {
       Kode_Barang: String(o.Kode_Barang ?? ""),
       QTY: Number(o.QTY) || 0,
       Tanggal_Order: o.Tanggal_Order,
+      Plan_Date: o.Plan_Date,
+      Nama_Barang: o.Nama_Barang,
     };
     const existing = map.get(no);
     if (existing) {

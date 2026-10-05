@@ -4,6 +4,7 @@ export type PlanningSourceType = 'spk' | 'so';
 export interface ProductionOrder {
   No_SPK: string;
   Tanggal_Order?: string;
+  Plan_Date?: string;
   Nama_PO?: string;
   Kode_Barang: string;
   QTY: number;

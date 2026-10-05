@@ -4,6 +4,13 @@ import { computePlan, getCommitted, getActiveOrders, getStoredPlan } from "$lib/
 import { exportPlanToExcel } from "$lib/export";
 import { errorMessage } from "$lib/http";
 
+function parseExportMode(val?: string | null): "full" | "simple" | "erp-china" {
+  const clean = (val ?? "").trim().toLowerCase();
+  if (clean === "simple") return "simple";
+  if (clean === "erp-china" || clean === "china" || clean === "erp_china") return "erp-china";
+  return "full";
+}
+
 async function doExportPlan(params: {
   planId?: string;
   tgl1?: string;
@@ -11,7 +18,7 @@ async function doExportPlan(params: {
   q?: string;
   spks?: string[];
   source?: "spk" | "so";
-  mode?: "full" | "simple";
+  mode?: "full" | "simple" | "erp-china";
 }) {
   const { planId, tgl1, tgl2, q, spks, source = "spk", mode = "full" } = params;
 
@@ -64,7 +71,7 @@ export const GET: RequestHandler = async ({ url }) => {
   const tgl2 = url.searchParams.get("tgl2")?.trim() || undefined;
   const q = url.searchParams.get("q")?.trim() || undefined;
   const source = (url.searchParams.get("source")?.trim().toLowerCase() === "so" ? "so" : "spk") as "spk" | "so";
-  const mode = (url.searchParams.get("mode")?.trim().toLowerCase() === "simple" ? "simple" : "full") as "full" | "simple";
+  const mode = parseExportMode(url.searchParams.get("mode"));
   const spkParam = url.searchParams.get("spk")?.trim() || "";
   const spks = spkParam ? spkParam.split(",").map((s) => s.trim()).filter(Boolean) : undefined;
 
@@ -87,7 +94,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
     const tgl2 = String(fd.get("tgl2") ?? url.searchParams.get("tgl2") ?? "").trim() || undefined;
     const q = String(fd.get("q") ?? url.searchParams.get("q") ?? "").trim() || undefined;
     const source = (String(fd.get("source") ?? url.searchParams.get("source") ?? "spk").trim().toLowerCase() === "so" ? "so" : "spk") as "spk" | "so";
-    const mode = (String(fd.get("mode") ?? url.searchParams.get("mode") ?? "full").trim().toLowerCase() === "simple" ? "simple" : "full") as "full" | "simple";
+    const mode = parseExportMode(String(fd.get("mode") ?? url.searchParams.get("mode") ?? "full"));
 
     let spks = fd.getAll("spk").map(String).filter(Boolean);
     if (spks.length === 0) {

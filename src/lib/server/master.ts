@@ -53,7 +53,8 @@ const BASE_SELECT = `
     a.[ItemName],
     a.[namebc],
     a.[ItemName2] AS namecina,
-    a.[warnac] AS warna,
+    a.[warna],
+    a.[warnac],
     a.[Mark] AS Departemen,
     a.[KodeJenis],
     a.[SatuanKecil] AS Satuan,
@@ -81,7 +82,8 @@ const createSqlParam = (name: string, value: string) => ({
 // ============ MAPPING ============
 const mapRow = (row: DbRow): MasterItem => {
   const namecina = row.namecina ?? row.ItemName2 ?? "";
-  const warna = row.warna ?? row.warnac ?? "";
+  const warna = row.warna ?? "";
+  const warnac = row.warnac ?? "";
   const satuan = row.Satuan ?? row.SatuanKecil ?? "";
   const departemen = row.Departemen ?? row.Mark ?? "";
 
@@ -92,7 +94,7 @@ const mapRow = (row: DbRow): MasterItem => {
     namecina,
     ItemName2: namecina,
     warna,
-    warnac: warna,
+    warnac,
     Departemen: departemen,
     Mark: departemen,
     KodeJenis: row.KodeJenis,
@@ -203,6 +205,8 @@ export async function getMasterGoodsPaged(
     "a.[ItemName2]",
     "a.[Mark]",
     "b.[NamaJenis]",
+    "a.[warna]",
+    "a.[warnac]",
   ];
 
   const whereClause = hasSearch
@@ -309,6 +313,7 @@ export interface CreateMasterItemPayload {
   SatuanKecil?: string;
   Spec?: string;
   bahan?: string;
+  warna?: string;
   warnac?: string;
 }
 
@@ -325,16 +330,18 @@ export async function getKindofGoods(): Promise<KindOfGoods[]> {
 }
 
 export async function getMasterReferenceData() {
-  const [kindsRes, marksRes, unitsRes] = await Promise.all([
+  const [kindsRes, marksRes, unitsRes, colorsRes] = await Promise.all([
     runQuery(`SELECT KodeJenis, NamaJenis, Status FROM [cp].[dbo].[taKindofGoods] ORDER BY KodeJenis`),
     runQuery(`SELECT DISTINCT Mark FROM [cp].[dbo].[taGoods] WHERE Mark IS NOT NULL AND LTRIM(RTRIM(Mark)) <> '' ORDER BY Mark`),
-    runQuery(`SELECT DISTINCT SatuanKecil FROM [cp].[dbo].[taGoods] WHERE SatuanKecil IS NOT NULL AND LTRIM(RTRIM(SatuanKecil)) <> '' ORDER BY SatuanKecil`)
+    runQuery(`SELECT DISTINCT SatuanKecil FROM [cp].[dbo].[taGoods] WHERE SatuanKecil IS NOT NULL AND LTRIM(RTRIM(SatuanKecil)) <> '' ORDER BY SatuanKecil`),
+    runQuery(`SELECT DISTINCT warna FROM [cp].[dbo].[taGoods] WHERE warna IS NOT NULL AND LTRIM(RTRIM(warna)) <> '' ORDER BY warna`)
   ]);
 
   return {
     kinds: (kindsRes.recordset ?? []) as KindOfGoods[],
     departments: (marksRes.recordset ?? []).map((r: any) => String(r.Mark).trim()).filter(Boolean),
-    units: (unitsRes.recordset ?? []).map((r: any) => String(r.SatuanKecil).trim()).filter(Boolean)
+    units: (unitsRes.recordset ?? []).map((r: any) => String(r.SatuanKecil).trim()).filter(Boolean),
+    colors: (colorsRes.recordset ?? []).map((r: any) => String(r.warna).trim()).filter(Boolean)
   };
 }
 
@@ -363,17 +370,18 @@ export async function createMasterItem(
   const itemName2 = (payload.ItemName2 ?? '').trim() || null;
   const spec = (payload.Spec ?? '').trim() || null;
   const bahan = (payload.bahan ?? '').trim() || '';
+  const warna = (payload.warna ?? '').trim().slice(0, 20) || '';
   const warnac = (payload.warnac ?? '').trim() || '';
   const user = (username || 'system').slice(0, 50);
 
   const insertQ = `
     INSERT INTO [cp].[dbo].[taGoods] (
       ItemID, ItemName, ItemNameBuy, ItemName2, namebc,
-      KodeJenis, Mark, SatuanKecil, Spec, bahan, warnac,
+      KodeJenis, Mark, SatuanKecil, Spec, bahan, warna, warnac,
       UserName, UserDateTime, Delisted
     ) VALUES (
       @ItemID, @ItemName, @ItemName, @ItemName2, @namebc,
-      @KodeJenis, @Mark, @SatuanKecil, @Spec, @bahan, @warnac,
+      @KodeJenis, @Mark, @SatuanKecil, @Spec, @bahan, @warna, @warnac,
       @UserName, GETDATE(), 0
     )
   `;
@@ -388,6 +396,7 @@ export async function createMasterItem(
     { name: 'SatuanKecil', type: sql.VarChar(15), value: satuanKecil },
     { name: 'Spec', type: sql.NVarChar(400), value: spec },
     { name: 'bahan', type: sql.NVarChar(150), value: bahan },
+    { name: 'warna', type: sql.VarChar(20), value: warna },
     { name: 'warnac', type: sql.NVarChar(150), value: warnac },
     { name: 'UserName', type: sql.VarChar(50), value: user },
   ]);
@@ -418,7 +427,8 @@ export async function updateMasterItem(
   const itemName2 = payload.ItemName2 !== undefined ? (payload.ItemName2.trim() || null) : existing.ItemName2;
   const spec = payload.Spec !== undefined ? (payload.Spec.trim() || null) : existing.Spec;
   const bahan = payload.bahan !== undefined ? payload.bahan.trim() : existing.bahan;
-  const warnac = payload.warnac !== undefined ? payload.warnac.trim() : existing.warna;
+  const warna = payload.warna !== undefined ? payload.warna.trim().slice(0, 20) : (existing.warna || '');
+  const warnac = payload.warnac !== undefined ? payload.warnac.trim() : (existing.warnac || '');
   const user = (username || 'system').slice(0, 50);
 
   const updateQ = `
@@ -433,6 +443,7 @@ export async function updateMasterItem(
       SatuanKecil = @SatuanKecil,
       Spec = @Spec,
       bahan = @bahan,
+      warna = @warna,
       warnac = @warnac,
       UserUpdateName = @UserUpdateName,
       UserUpdateTime = GETDATE()
@@ -449,6 +460,7 @@ export async function updateMasterItem(
     { name: 'SatuanKecil', type: sql.VarChar(15), value: satuanKecil },
     { name: 'Spec', type: sql.NVarChar(400), value: spec },
     { name: 'bahan', type: sql.NVarChar(150), value: bahan },
+    { name: 'warna', type: sql.VarChar(20), value: warna },
     { name: 'warnac', type: sql.NVarChar(150), value: warnac },
     { name: 'UserUpdateName', type: sql.VarChar(50), value: user },
   ]);
@@ -521,7 +533,8 @@ export async function generateMasterGoodsExcelTemplate(): Promise<Buffer> {
       "Satuan (SatuanKecil)",
       "Spesifikasi (Spec)",
       "Bahan (bahan)",
-      "Warna (warnac)"
+      "Warna Indo (warna)",
+      "Warna Mandarin (warnac)"
     ],
     [
       "CONTOH-BB-001",
@@ -533,7 +546,8 @@ export async function generateMasterGoodsExcelTemplate(): Promise<Buffer> {
       "KG",
       "MFI 12",
       "POLYPROPYLENE",
-      "HITAM"
+      "HITAM",
+      "黑色"
     ],
     [
       "CONTOH-FG-001",
@@ -545,7 +559,8 @@ export async function generateMasterGoodsExcelTemplate(): Promise<Buffer> {
       "PCS",
       "STANDARD 1/2 INCH",
       "ZINC / BRASS",
-      "CHROME"
+      "CHROME",
+      "铬色"
     ]
   ];
 
@@ -560,7 +575,8 @@ export async function generateMasterGoodsExcelTemplate(): Promise<Buffer> {
     { wch: 15 },
     { wch: 25 },
     { wch: 20 },
-    { wch: 15 }
+    { wch: 20 },
+    { wch: 22 }
   ];
   XLSX.utils.book_append_sheet(wb, ws, "FORM_MASTER_BARANG");
 
@@ -574,19 +590,21 @@ export async function generateMasterGoodsExcelTemplate(): Promise<Buffer> {
   wsKinds["!cols"] = [{ wch: 15 }, { wch: 30 }, { wch: 15 }];
   XLSX.utils.book_append_sheet(wb, wsKinds, "REFERENSI_JENIS");
 
-  // Sheet 3: REFERENSI DEPARTEMEN & SATUAN
-  const maxLen = Math.max(refData.departments.length, refData.units.length);
+  // Sheet 3: REFERENSI DEPARTEMEN, SATUAN & WARNA
+  const maxLen = Math.max(refData.departments.length, refData.units.length, refData.colors.length);
   const deptRows: any[][] = [
-    ["Daftar Departemen (Mark)", "", "Daftar Satuan Umum"],
+    ["Daftar Departemen (Mark)", "", "Daftar Satuan Umum", "", "Daftar Warna Indo (warna)"],
     ...Array.from({ length: maxLen }, (_, i) => [
       refData.departments[i] || "",
       "",
-      refData.units[i] || ""
+      refData.units[i] || "",
+      "",
+      refData.colors[i] || ""
     ])
   ];
   const wsDepts = XLSX.utils.aoa_to_sheet(deptRows);
-  wsDepts["!cols"] = [{ wch: 30 }, { wch: 5 }, { wch: 20 }];
-  XLSX.utils.book_append_sheet(wb, wsDepts, "REFERENSI_DEPT_SATUAN");
+  wsDepts["!cols"] = [{ wch: 30 }, { wch: 5 }, { wch: 20 }, { wch: 5 }, { wch: 25 }];
+  XLSX.utils.book_append_sheet(wb, wsDepts, "REFERENSI_DEPT_SATUAN_WARNA");
 
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 }
@@ -602,6 +620,7 @@ export interface ParsedMasterItemRow {
   SatuanKecil?: string;
   Spec?: string;
   bahan?: string;
+  warna?: string;
   warnac?: string;
   status: 'NEW' | 'EXISTS' | 'INVALID';
   errorMessage?: string;
@@ -637,6 +656,16 @@ export async function parseMasterGoodsExcelImport(buffer: Buffer): Promise<Parse
   }
 
   const header = rawRows[headerIdx].map((c) => String(c).trim().toLowerCase());
+
+  let colWarna = header.findIndex(h => h.includes("warna indo") || h.includes("(warna)"));
+  let colWarnac = header.findIndex(h => h.includes("warna mandarin") || h.includes("(warnac)") || (h.includes("warna") && (h.includes("mandarin") || h.includes("cina"))));
+
+  if (colWarna === -1 && colWarnac === -1) {
+    colWarna = header.findIndex(h => h.includes("warna"));
+  } else if (colWarna === -1) {
+    colWarna = header.findIndex((h, idx) => idx !== colWarnac && h.includes("warna"));
+  }
+
   const colMap = {
     itemId: header.findIndex(h => h.includes("itemid") || h.includes("kode barang") || h.includes("kode")),
     itemName: header.findIndex(h => h.includes("itemname") || h.includes("nama barang")),
@@ -647,7 +676,8 @@ export async function parseMasterGoodsExcelImport(buffer: Buffer): Promise<Parse
     satuan: header.findIndex(h => h.includes("satuan") || h.includes("unit")),
     spec: header.findIndex(h => h.includes("spec") || h.includes("spesifikasi")),
     bahan: header.findIndex(h => h.includes("bahan")),
-    warnac: header.findIndex(h => h.includes("warna"))
+    warna: colWarna,
+    warnac: colWarnac
   };
 
   if (colMap.itemId === -1) colMap.itemId = 0;
@@ -679,6 +709,9 @@ export async function parseMasterGoodsExcelImport(buffer: Buffer): Promise<Parse
       SatuanKecil: colMap.satuan >= 0 ? String(r[colMap.satuan] ?? "").trim().toUpperCase() || 'PCS' : 'PCS',
       Spec: colMap.spec >= 0 ? String(r[colMap.spec] ?? "").trim() || undefined : undefined,
       bahan: colMap.bahan >= 0 ? String(r[colMap.bahan] ?? "").trim() || undefined : undefined,
+      warna: colMap.warna >= 0 
+        ? String(r[colMap.warna] ?? "").trim().slice(0, 20) || undefined 
+        : (colMap.warnac >= 0 ? String(r[colMap.warnac] ?? "").trim().slice(0, 20) || undefined : undefined),
       warnac: colMap.warnac >= 0 ? String(r[colMap.warnac] ?? "").trim() || undefined : undefined,
     });
   }
