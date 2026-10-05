@@ -243,7 +243,7 @@
 			<Button type="submit" class="h-11 border-[3px] font-black uppercase tracking-wide brutal-shadow-sm">
 				Tampilkan
 			</Button>
-			{#if data.q || data.tgl1}
+			{#if data.q || data.tgl1 || data.tgl2}
 				<a
 					href="/dashboard/ppic?source={data.source}"
 					class="border-border bg-card hover:bg-muted inline-flex h-11 items-center rounded-lg border-[3px] px-4 text-sm font-black uppercase tracking-wide brutal-shadow-sm"
@@ -331,8 +331,9 @@
 							title="Pilih Format Template Excel"
 							class="h-10 px-2.5 bg-background border-[3px] border-border font-mono text-xs font-black uppercase tracking-wider brutal-shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary"
 						>
-							<option value="full">Format: Detail (16 Kolom)</option>
-							<option value="simple">Format: Simpel (8 Kolom)</option>
+							<option value="full">Format: Detail (Tree Hierarki)</option>
+							<option value="simple">Format: Simpel (Tree Hierarki)</option>
+							<option value="no-tree">Format: Tanpa Tree (Daftar Material)</option>
 							<option value="erp-china">Format: ERP China (生产单)</option>
 						</select>
 						<Button
@@ -416,8 +417,8 @@
 					basePath="/dashboard/ppic"
 					pageSizeOptions={[25, 50, 100, 200]}
 					params={{
-						tgl1: data.tgl1,
-						tgl2: data.tgl2,
+						tgl1: data.tgl1 || undefined,
+						tgl2: data.tgl2 || undefined,
 						q: data.q || undefined,
 						source: data.source
 					}}

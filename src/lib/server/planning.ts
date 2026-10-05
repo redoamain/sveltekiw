@@ -79,15 +79,13 @@ export async function getActiveOrders(
         ON hd.[CompanyID] = c.[CompanyID]
       WHERE hd.[Completed] = 0 AND hd.[Canceled] = 0
     `;
-    if (startDate && endDate) {
-      query += `
-        AND hd.[OrderDate] >= @StartDate
-        AND hd.[OrderDate] <= @EndDate
-      `;
-      inputs.push(
-        { name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` },
-        { name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` },
-      );
+    if (startDate) {
+      query += ` AND hd.[OrderDate] >= @StartDate`;
+      inputs.push({ name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` });
+    }
+    if (endDate) {
+      query += ` AND hd.[OrderDate] <= @EndDate`;
+      inputs.push({ name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` });
     }
     const qq = (q ?? "").trim();
     if (qq) {
@@ -110,15 +108,13 @@ export async function getActiveOrders(
         AND hd.[OrderType] = dt.[OrderType]
       WHERE hd.[Completed] = '0' AND hd.[OrderID] LIKE 'AS%'
     `;
-    if (startDate && endDate) {
-      query += `
-        AND hd.[OrderDate] >= @StartDate
-        AND hd.[OrderDate] <= @EndDate
-      `;
-      inputs.push(
-        { name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` },
-        { name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` },
-      );
+    if (startDate) {
+      query += ` AND hd.[OrderDate] >= @StartDate`;
+      inputs.push({ name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` });
+    }
+    if (endDate) {
+      query += ` AND hd.[OrderDate] <= @EndDate`;
+      inputs.push({ name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` });
     }
     const qq = (q ?? "").trim();
     if (qq) {
@@ -161,12 +157,13 @@ export async function getActiveOrdersPaged(
 
   if (isSO) {
     let where = `WHERE hd.[Completed] = 0 AND hd.[Canceled] = 0`;
-    if (startDate && endDate) {
-      where += ` AND hd.[OrderDate] >= @StartDate AND hd.[OrderDate] <= @EndDate`;
-      inputs.push(
-        { name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` },
-        { name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` },
-      );
+    if (startDate) {
+      where += ` AND hd.[OrderDate] >= @StartDate`;
+      inputs.push({ name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` });
+    }
+    if (endDate) {
+      where += ` AND hd.[OrderDate] <= @EndDate`;
+      inputs.push({ name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` });
     }
     if (qq) {
       where += ` AND (hd.[OrderID] LIKE @q OR hd.[CompanyID] LIKE @q OR c.[CompanyName1] LIKE @q OR hd.[Remark] LIKE @q OR dt.[ItemID] LIKE @q OR dt.[Itemname] LIKE @q)`;
@@ -248,12 +245,13 @@ export async function getActiveOrdersPaged(
     let where = `WHERE hd.[Completed] = '0' AND hd.[OrderID] LIKE 'AS%'`;
     const inputs: Parameters<typeof runQuery>[1] = [];
 
-    if (startDate && endDate) {
-      where += ` AND hd.[OrderDate] >= @StartDate AND hd.[OrderDate] <= @EndDate`;
-      inputs.push(
-        { name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` },
-        { name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` },
-      );
+    if (startDate) {
+      where += ` AND hd.[OrderDate] >= @StartDate`;
+      inputs.push({ name: "StartDate", type: sql.VarChar, value: `${startDate} 00:00:00` });
+    }
+    if (endDate) {
+      where += ` AND hd.[OrderDate] <= @EndDate`;
+      inputs.push({ name: "EndDate", type: sql.VarChar, value: `${endDate} 23:59:59` });
     }
 
     const qq = (q ?? "").trim();

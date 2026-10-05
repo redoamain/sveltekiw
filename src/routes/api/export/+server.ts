@@ -4,9 +4,10 @@ import { computePlan, getCommitted, getActiveOrders, getStoredPlan } from "$lib/
 import { exportPlanToExcel } from "$lib/export";
 import { errorMessage } from "$lib/http";
 
-function parseExportMode(val?: string | null): "full" | "simple" | "erp-china" {
+function parseExportMode(val?: string | null): "full" | "simple" | "no-tree" | "erp-china" {
   const clean = (val ?? "").trim().toLowerCase();
   if (clean === "simple") return "simple";
+  if (clean === "no-tree" || clean === "flat" || clean === "tanpa-tree" || clean === "tanpa_tree") return "no-tree";
   if (clean === "erp-china" || clean === "china" || clean === "erp_china") return "erp-china";
   return "full";
 }
@@ -18,7 +19,7 @@ async function doExportPlan(params: {
   q?: string;
   spks?: string[];
   source?: "spk" | "so";
-  mode?: "full" | "simple" | "erp-china";
+  mode?: "full" | "simple" | "no-tree" | "erp-china";
 }) {
   const { planId, tgl1, tgl2, q, spks, source = "spk", mode = "full" } = params;
 

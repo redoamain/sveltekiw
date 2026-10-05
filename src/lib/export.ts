@@ -30,7 +30,7 @@ export interface ExportPlanPayload {
   bomByKodeBarang: Map<string, BomItem[]>;
   stockRows: Map<string, StockRow>;
   reservations: StockReservation[];
-  mode?: "full" | "simple" | "erp-china";
+  mode?: "full" | "simple" | "no-tree" | "erp-china";
 }
 
 // ==================== TEMA WARNA PER DEPARTEMEN ====================
@@ -323,6 +323,7 @@ interface MaterialAgg {
   nama_china: string;
   spec: string;
   warna: string;
+  warnac: string;
   bahan: string;
   departemen: string;
   totalNeeded: number;
@@ -351,6 +352,7 @@ export async function exportPlanToExcel(
 ): Promise<{ buffer: Buffer; fileName: string }> {
   const { groups, bomByKodeBarang, stockRows, reservations, mode = "full" } = payload;
   const isSimple = mode === "simple";
+  const isNoTree = mode === "no-tree";
   const isChina = mode === "erp-china";
   const today = new Date().toISOString().split("T")[0];
 
@@ -361,7 +363,7 @@ export async function exportPlanToExcel(
   // ============ NAMA FILE ============
   const cleanName = (n: string, len: number) =>
     (n || "").replace(/[\\/*?:"<>|]/g, "").replace(/\s+/g, "_").substring(0, len);
-  const suffixMode = isChina ? "_ERP_China" : isSimple ? "_Simpel" : "";
+  const suffixMode = isChina ? "_ERP_China" : isNoTree ? "_Tanpa_Tree" : isSimple ? "_Simpel" : "";
   let fileName: string;
   if (groups.length === 1) {
     const g = groups[0];
@@ -390,7 +392,16 @@ export async function exportPlanToExcel(
 
   const masterDataMap = new Map<
     string,
-    { name: string; namecina: string; spec: string; warna: string; warnac: string; bahan: string }
+    {
+      name: string;
+      namecina: string;
+      spec: string;
+      warna: string;
+      warnac: string;
+      bahan: string;
+      mark: string;
+      namaJenis: string;
+    }
   >();
   if (allTargetIds.length > 0) {
     try {
@@ -403,6 +414,8 @@ export async function exportPlanToExcel(
           warna: String(m.warna ?? "-"),
           warnac: String(m.warnac ?? "-"),
           bahan: String(m.bahan ?? "-"),
+          mark: String(m.Departemen ?? m.Mark ?? ""),
+          namaJenis: String(m.NamaJenis ?? ""),
         });
       });
     } catch {
@@ -410,7 +423,35 @@ export async function exportPlanToExcel(
     }
   }
   const masterOf = (id: string) =>
-    masterDataMap.get(id) ?? { name: "", namecina: "", spec: "-", warna: "-", warnac: "-", bahan: "-" };
+    masterDataMap.get(id) ?? {
+      name: "",
+      namecina: "",
+      spec: "-",
+      warna: "-",
+      warnac: "-",
+      bahan: "-",
+      mark: "",
+      namaJenis: "",
+    };
+
+  const isKategoriInjeksiBB = (
+    deptOrMark?: string,
+    masterMark?: string,
+    namaJenis?: string,
+  ): boolean => {
+    const check = (val?: string) => {
+      if (!val) return false;
+      const s = String(val).trim().toUpperCase();
+      return (
+        s.includes("INJEKSI-BB") ||
+        s.includes("INJEKSI BB") ||
+        s.includes("INJEKSI_BB") ||
+        s === "INJEKSIBB" ||
+        s === "INJ-BB"
+      );
+    };
+    return check(deptOrMark) || check(masterMark) || check(namaJenis);
+  };
 
   // ============ MODE ERP CHINA ============
   if (isChina) {
@@ -549,6 +590,7 @@ export async function exportPlanToExcel(
             nama_china: component.ItemName2 || "-",
             spec: master.spec,
             warna: master.warna,
+            warnac: master.warnac,
             bahan: master.bahan,
             departemen: component.Departemen || "UNKNOWN",
             totalNeeded: 0,
@@ -630,6 +672,7 @@ export async function exportPlanToExcel(
       "Nama China": agg.nama_china,
       Spesifikasi: agg.spec,
       Warna: agg.warna,
+      "Warna China": agg.warnac && agg.warnac !== "-" ? agg.warnac : "",
       Bahan: agg.bahan,
       Departemen: agg.departemen,
       "Barang Jadi": barangJadiDetails.join("\n"),
@@ -870,6 +913,7 @@ export async function exportPlanToExcel(
       row["Status Stock"] ?? "",
       row["Keterangan Variant"] ?? "",
       row["Info Level"] || "",
+      row["Warna China"] ?? "",
     ];
 
     if (!deptMap.has(materialCode)) {
@@ -901,6 +945,9 @@ export async function exportPlanToExcel(
       const newLevelInfo = String(rowArray[17] || "");
       if (newLevelInfo && !existingLevelInfo.includes(newLevelInfo)) {
         existing[17] = existingLevelInfo ? `${existingLevelInfo} | ${newLevelInfo}` : newLevelInfo;
+      }
+      if (!existing[18] && rowArray[18]) {
+        existing[18] = rowArray[18];
       }
       deptMap.set(materialCode, existing);
     }
@@ -1053,11 +1100,289 @@ export async function exportPlanToExcel(
   };
 
   for (const dept of sortedDepartments) {
-    const deptMaterials = finalMaterialsByDept.get(dept) || [];
+    if (isNoTree && isKategoriInjeksiBB(dept)) {
+      continue;
+    }
+
+    const rawDeptMaterials = finalMaterialsByDept.get(dept) || [];
+    const deptMaterials = isNoTree
+      ? rawDeptMaterials.filter((r) => {
+          const materialId = normalizeItemId(String(r[1]));
+          const master = masterOf(materialId);
+          const itemDept = String(r[7] || "");
+          return !isKategoriInjeksiBB(itemDept, master.mark, master.namaJenis);
+        })
+      : rawDeptMaterials;
+
+    if (isNoTree && deptMaterials.length === 0) {
+      continue;
+    }
+
     const totalNeeded = deptMaterials.reduce((sum, row) => sum + Number(row[8] || 0), 0);
     const totalSisa = deptMaterials.reduce((sum, row) => sum + Number(row[13] || 0), 0);
 
     const normTargetDept = (dept || "").trim().toUpperCase();
+    const theme = getDeptTheme(dept);
+
+    if (isNoTree) {
+      const headersDeptNoTree: Cell[] = [
+        "No",
+        "Kode Barang",
+        "Nama Barang",
+        "Nama China",
+        "Spec",
+        "Bahan",
+        "Warna China",
+        "Departemen",
+        "Total Kebutuhan",
+        "Qty Diambil PO Lain",
+        "Stok Gudang (Real)",
+        "Sisa Setelah Produksi",
+        "Status Stok",
+        "Untuk SPK / Barang Jadi",
+        "Keterangan / Variant",
+      ];
+
+      const deptColWidthsNoTree = [
+        { wch: 6 },  // 0: No
+        { wch: 22 }, // 1: Kode Barang
+        { wch: 38 }, // 2: Nama Barang
+        { wch: 25 }, // 3: Nama China
+        { wch: 22 }, // 4: Spec
+        { wch: 18 }, // 5: Bahan
+        { wch: 18 }, // 6: Warna China
+        { wch: 15 }, // 7: Departemen
+        { wch: 16 }, // 8: Total Kebutuhan
+        { wch: 20 }, // 9: Qty Diambil PO Lain
+        { wch: 18 }, // 10: Stok Gudang (Real)
+        { wch: 20 }, // 11: Sisa Setelah Produksi
+        { wch: 14 }, // 12: Status Stok
+        { wch: 32 }, // 13: Untuk SPK / Barang Jadi
+        { wch: 28 }, // 14: Keterangan / Variant
+      ];
+
+      const numCols = headersDeptNoTree.length;
+      const deptNoTreeRows: Cell[][] = [];
+
+      for (let i = 0; i < deptMaterials.length; i++) {
+        const r = deptMaterials[i];
+        const variant = String(r[16] || "").trim();
+        const infoLevel = String(r[17] || "").trim();
+        let ket = variant !== "-" ? variant : "";
+        if (infoLevel) {
+          ket = ket ? `${ket} | ${infoLevel}` : infoLevel;
+        }
+        if (!ket) ket = "-";
+
+        deptNoTreeRows.push([
+          i + 1,
+          r[1],
+          r[2],
+          r[3] !== "-" ? r[3] : "",
+          r[4] !== "-" ? r[4] : "",
+          r[6] !== "-" ? r[6] : "",
+          r[18] && r[18] !== "-" ? r[18] : "",
+          r[7] || normTargetDept,
+          Number(r[8]) || 0,
+          Number(r[9]) || 0,
+          Number(r[11]) || 0,
+          Number(r[13]) || 0,
+          r[15] || "-",
+          r[0] || "-",
+          ket,
+        ]);
+      }
+
+      if (deptNoTreeRows.length === 0) {
+        deptNoTreeRows.push([
+          "-",
+          "Tidak ada material untuk departemen ini",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+        ]);
+      }
+
+      // Summary row at the bottom
+      const summaryText = `TOTAL KEBUTUHAN MATERIAL DEPARTEMEN ${(dept as string).toUpperCase()}: ${totalNeeded.toLocaleString()} UNIT | SISA STOK REAL: ${totalSisa.toLocaleString()} UNIT`;
+      const summaryRow: Cell[] = [summaryText];
+      for (let c = 1; c < numCols; c++) {
+        summaryRow.push("");
+      }
+      deptNoTreeRows.push(summaryRow);
+
+      const wsData: Cell[][] = [
+        [`LAPORAN RENCANA PRODUKSI (DAFTAR MATERIAL) - DEPARTEMEN ${(dept as string).toUpperCase()}`],
+        [`Tanggal Export: ${new Date().toLocaleDateString("id-ID")} ${new Date().toLocaleTimeString("id-ID")}`],
+        [`Tanggal Stok: ${today}`],
+        [`Catatan: Format daftar material langsung tanpa pohon hierarki (Flat Material List).`],
+        [],
+        headersDeptNoTree,
+        ...deptNoTreeRows,
+      ];
+
+      const summaryRowIdx = 6 + deptNoTreeRows.length - 1;
+      const merges: XLSXTypes.Range[] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: numCols - 1 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: numCols - 1 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: numCols - 1 } },
+        { s: { r: 3, c: 0 }, e: { r: 3, c: numCols - 1 } },
+        { s: { r: summaryRowIdx, c: 0 }, e: { r: summaryRowIdx, c: numCols - 1 } },
+      ];
+
+      const wsDept = XLSX.utils.aoa_to_sheet(wsData);
+      wsDept["!cols"] = deptColWidthsNoTree;
+      wsDept["!merges"] = merges;
+
+      // Row 0: Banner Judul
+      for (let c = 0; c < numCols; c++) {
+        setCellStyle(wsDept, XLSX.utils.encode_cell({ r: 0, c }), {
+          fill: { fgColor: { rgb: theme.bannerFill } },
+          font: { name: "Calibri", sz: 12, bold: true, color: { rgb: theme.bannerFont } },
+          alignment: { vertical: "center", indent: 1 },
+        });
+      }
+
+      // Row 1..3: Meta Info
+      for (let r = 1; r <= 3; r++) {
+        for (let c = 0; c < numCols; c++) {
+          setCellStyle(wsDept, XLSX.utils.encode_cell({ r, c }), {
+            font: { name: "Calibri", sz: 9, italic: true, color: { rgb: "4B5563" } },
+            alignment: { vertical: "center" },
+          });
+        }
+      }
+
+      // Row 5: Table Header
+      for (let c = 0; c < numCols; c++) {
+        setCellStyle(wsDept, XLSX.utils.encode_cell({ r: 5, c }), {
+          fill: { fgColor: { rgb: theme.headerFill } },
+          font: { name: "Calibri", sz: 10, bold: true, color: { rgb: theme.headerFont } },
+          alignment: { horizontal: "center", vertical: "center", wrapText: true },
+          border: {
+            top: { style: "thin", color: { rgb: "374151" } },
+            bottom: { style: "medium", color: { rgb: "111827" } },
+            left: { style: "thin", color: { rgb: "374151" } },
+            right: { style: "thin", color: { rgb: "374151" } },
+          },
+        });
+      }
+
+      // Data rows styling
+      for (let i = 0; i < deptNoTreeRows.length; i++) {
+        const r = 6 + i;
+        if (r === summaryRowIdx) {
+          // Summary row
+          for (let c = 0; c < numCols; c++) {
+            setCellStyle(wsDept, XLSX.utils.encode_cell({ r, c }), {
+              fill: { fgColor: { rgb: theme.folderFill } },
+              font: { name: "Calibri", sz: 11, bold: true, color: { rgb: theme.headerFill } },
+              alignment: { horizontal: "center", vertical: "center" },
+              border: {
+                top: { style: "medium", color: { rgb: theme.tabColor } },
+                bottom: { style: "double", color: { rgb: theme.tabColor } },
+              },
+            });
+          }
+          continue;
+        }
+
+        const row = deptNoTreeRows[i];
+        for (let c = 0; c < numCols; c++) {
+          const val = row[c];
+          const isNumeric = c === 8 || c === 9 || c === 10 || c === 11;
+          const isCenter = c === 0 || c === 5 || c === 6 || c === 7 || c === 12;
+
+          const cellStyle: any = {
+            font: { name: "Calibri", sz: 10, color: { rgb: "1F2937" } },
+            alignment: {
+              horizontal: isNumeric ? "right" : isCenter ? "center" : "left",
+              vertical: "center",
+              wrapText: c === 13,
+            },
+            border: {
+              bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+              right: { style: "thin", color: { rgb: "F3F4F6" } },
+            },
+          };
+
+          // Col 1: Kode Barang (Bold)
+          if (c === 1) {
+            cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "111827" } };
+          }
+
+          // Col 7: Departemen (Badge with department colors)
+          if (c === 7 && val && val !== "-") {
+            const dTh = getDeptTheme(String(val));
+            cellStyle.fill = { fgColor: { rgb: dTh.folderFill } };
+            cellStyle.font = { name: "Calibri", sz: 9, bold: true, color: { rgb: dTh.headerFill } };
+          }
+
+          // Col 8: Total Kebutuhan (Bold)
+          if (c === 8) {
+            cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "111827" } };
+          }
+
+          // Col 9: Qty Diambil PO Lain (Highlight amber if > 0)
+          if (c === 9 && Number(val) > 0) {
+            cellStyle.fill = { fgColor: { rgb: "FEF3C7" } };
+            cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "92400E" } };
+          }
+
+          // Col 11: Sisa Setelah Produksi
+          if (c === 11 && val !== "" && val != null) {
+            const num = Number(val);
+            if (num < 0) {
+              cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "DC2626" } };
+            } else if (num > 0) {
+              cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "047857" } };
+            }
+          }
+
+          // Col 12: Status Stok
+          if (c === 12 && val) {
+            const sStr = String(val).trim().toUpperCase();
+            if (sStr === "AMAN" || sStr === "CUKUP" || sStr === "KELEBIHAN") {
+              cellStyle.fill = { fgColor: { rgb: "D1FAE5" } };
+              cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "065F46" } };
+            } else if (sStr === "KURANG") {
+              cellStyle.fill = { fgColor: { rgb: "FEE2E2" } };
+              cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "991B1B" } };
+            } else if (sStr === "HABIS") {
+              cellStyle.fill = { fgColor: { rgb: "FEE2E2" } };
+              cellStyle.font = { name: "Calibri", sz: 10, bold: true, color: { rgb: "7F1D1D" } };
+            }
+          }
+
+          // Col 13: Untuk SPK / Barang Jadi
+          if (c === 13) {
+            cellStyle.font = { name: "Calibri", sz: 9, color: { rgb: "4B5563" } };
+          }
+
+          // Col 14: Keterangan
+          if (c === 14) {
+            cellStyle.font = { name: "Calibri", sz: 9, color: { rgb: "6B7280" } };
+          }
+
+          setCellStyle(wsDept, XLSX.utils.encode_cell({ r, c }), cellStyle);
+        }
+      }
+
+      const sheetName = getUniqueSheetName(wb, dept.toUpperCase());
+      tabColorMap[sheetName] = theme.tabColor;
+      XLSX.utils.book_append_sheet(wb, wsDept, sheetName);
+      continue;
+    }
 
     // Map total kebutuhan se-departemen untuk tiap kode material
     const deptTotalMap = new Map<string, number>();
@@ -1322,7 +1647,6 @@ export async function exportPlanToExcel(
     wsDept["!merges"] = merges;
     wsDept["!rows"] = outRowMeta;
 
-    const theme = getDeptTheme(dept);
     const numCols = headersDeptTree.length;
 
     // Row 0: Banner Judul (Merged A1..<col>1)
@@ -1527,18 +1851,46 @@ export async function exportPlanToExcel(
     [],
     ["Departemen", "Jumlah Material", "Total Kebutuhan", "Total Sisa Stok", "Status"],
   ];
+  const displayedDepartments: string[] = [];
   for (const dept of sortedDepartments) {
-    const deptMaterials = finalMaterialsByDept.get(dept) || [];
+    if (isNoTree && isKategoriInjeksiBB(dept)) {
+      continue;
+    }
+    const rawDeptMaterials = finalMaterialsByDept.get(dept) || [];
+    const deptMaterials = isNoTree
+      ? rawDeptMaterials.filter((r) => {
+          const materialId = normalizeItemId(String(r[1]));
+          const master = masterOf(materialId);
+          const itemDept = String(r[7] || "");
+          return !isKategoriInjeksiBB(itemDept, master.mark, master.namaJenis);
+        })
+      : rawDeptMaterials;
+
+    if (isNoTree && deptMaterials.length === 0) {
+      continue;
+    }
+
+    displayedDepartments.push(dept);
     const totalNeeded = deptMaterials.reduce((sum, row) => sum + Number(row[8] || 0), 0);
     const totalSisa = deptMaterials.reduce((sum, row) => sum + Number(row[13] || 0), 0);
     const status = totalSisa > 0 ? "KELEBIHAN" : totalSisa < 0 ? "KEKURANGAN" : "CUKUP";
     allDeptSummary.push([dept, deptMaterials.length, totalNeeded.toLocaleString(), totalSisa.toLocaleString(), status]);
   }
-  const totalAllMaterials = materialDataForDatabase.length;
-  const totalAllNeeded = materialDataForDatabase.reduce(
+
+  const activeMaterialsForSummary = isNoTree
+    ? materialDataForDatabase.filter((row) => {
+        const materialId = normalizeItemId(String(row["Kode Material"]));
+        const master = masterOf(materialId);
+        const itemDept = String(row["Departemen"] || "");
+        return !isKategoriInjeksiBB(itemDept, master.mark, master.namaJenis);
+      })
+    : materialDataForDatabase;
+
+  const totalAllMaterials = activeMaterialsForSummary.length;
+  const totalAllNeeded = activeMaterialsForSummary.reduce(
     (sum, row) => sum + (Number(row["Total Kebutuhan"]) || 0), 0,
   );
-  const totalAllSisa = materialDataForDatabase.reduce(
+  const totalAllSisa = activeMaterialsForSummary.reduce(
     (sum, row) => sum + (Number(row["Qty Available"]) || 0), 0,
   );
   allDeptSummary.push(
@@ -1592,9 +1944,9 @@ export async function exportPlanToExcel(
     });
   }
   // Data rows
-  for (let idx = 0; idx < sortedDepartments.length; idx++) {
+  for (let idx = 0; idx < displayedDepartments.length; idx++) {
     const r = 5 + idx;
-    const deptName = sortedDepartments[idx];
+    const deptName = displayedDepartments[idx];
     const dTheme = getDeptTheme(deptName);
 
     // Col 0: Departemen (Badge warna tema departemen!)
@@ -1638,7 +1990,7 @@ export async function exportPlanToExcel(
   }
 
   // Row Total Keseluruhan
-  const totalRowIdx = 5 + sortedDepartments.length + 1;
+  const totalRowIdx = 5 + displayedDepartments.length + 1;
   for (let c = 0; c < 5; c++) {
     setCellStyle(wsSummary, XLSX.utils.encode_cell({ r: totalRowIdx, c }), {
       fill: { fgColor: { rgb: "E2E8F0" } },
@@ -1662,15 +2014,16 @@ export async function exportPlanToExcel(
     ["1", "Tanggal Export", "Tanggal saat laporan diekspor"],
     ["2", "Tanggal Stok", "Tanggal data stok yang digunakan"],
     [""],
-    ["B. STRUKTUR SHEET DEPARTEMEN (FILE TREE)"],
+    ["B. STRUKTUR SHEET DEPARTEMEN" + (isNoTree ? " (DAFTAR MATERIAL)" : " (FILE TREE)")],
     ["No", "Fitur", "Keterangan"],
-    ["1", "Format File Tree", "Struktur tunggal terpadu berhierarki (Folder SPK 📁 -> Sub-rakitan 📦 -> Bahan 📄)"],
-    ["2", "Outline Grouping", "Tombol [1] [2] [3] di sebelah kiri margin Excel untuk expand / collapse pohon rakitan"],
+    ["1", isNoTree ? "Format Daftar Flat" : "Format File Tree", isNoTree ? "Daftar langsung semua material kebutuhan departemen (tanpa hierarki pohon)" : "Struktur tunggal terpadu berhierarki (Folder SPK 📁 -> Sub-rakitan 📦 -> Bahan 📄)"],
+    ["2", "Outline Grouping", isNoTree ? "Tanpa outline grouping level pohon (semua baris material langsung terlihat)" : "Tombol [1] [2] [3] di sebelah kiri margin Excel untuk expand / collapse pohon rakitan"],
     ["3", "Kebutuhan Material", "Kolom 'Total Kebutuhan' adalah total jumlah material yang harus disiapkan untuk target SPK ini"],
     ["4", "Qty Diambil PO Lain", "Jumlah stok material yang telah dialokasikan / di-reservasi oleh SPK atau PO lain di luar yang sedang direncanakan"],
     ["5", "Sisa Setelah Produksi", "Dihitung dari: Stok Gudang (Real) - Total Kebutuhan - Qty Diambil PO Lain. Positif = AMAN, Negatif = KURANG"],
     ["6", "Asal Pasokan", "Bahan masuk dari departemen lain ditandai dengan label [DEPT] (misal: [SPRAY], [MOULDING], [GUDANG])"],
-    ["7", "Mode Template", `Format saat ini: ${isSimple ? "SIMPEL (12 Kolom ringkas dengan Spec, Nama China, Bahan, Warna China, Qty Diambil PO Lain)" : "DETAIL (19 Kolom lengkap)"}`],
+    ["7", "Mode Template", `Format saat ini: ${isChina ? "ERP CHINA (生产单)" : isNoTree ? "TANPA TREE (15 Kolom daftar material datar langsung)" : isSimple ? "SIMPEL (12 Kolom ringkas dengan Spec, Nama China, Bahan, Warna China, Qty Diambil PO Lain)" : "DETAIL (19 Kolom lengkap)"}`],
+    ...(isNoTree ? [["8", "Filter Kategori", "Material dengan kategori INJEKSI-BB tidak ditampilkan pada format ini"]] : []),
     [""],
     ["C. PENJELASAN KHUSUS - MULTI LEVEL"],
     ["No", "Item", "Keterangan"],
@@ -1682,19 +2035,23 @@ export async function exportPlanToExcel(
     ["No", "Informasi", "Nilai"],
     ["1", "Nama File", fileName],
     ["2", "Jumlah PO", groups.length],
-    ["3", "Total Material", materialDataForDatabase.length],
+    ["3", "Total Material", totalAllMaterials],
     ["4", "Tanggal Export", new Date().toLocaleDateString("id-ID")],
     ["5", "Waktu Export", new Date().toLocaleTimeString("id-ID")],
   ];
   const wsKeterangan = XLSX.utils.aoa_to_sheet(keteranganData);
   wsKeterangan["!cols"] = [{ wch: 8 }, { wch: 30 }, { wch: 50 }];
-  wsKeterangan["!merges"] = [
+
+  const mergesKet: XLSXTypes.Range[] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } },
-    { s: { r: 2, c: 0 }, e: { r: 2, c: 2 } },
-    { s: { r: 7, c: 0 }, e: { r: 7, c: 2 } },
-    { s: { r: 15, c: 0 }, e: { r: 15, c: 2 } },
-    { s: { r: 21, c: 0 }, e: { r: 21, c: 2 } },
   ];
+  for (let r = 0; r < keteranganData.length; r++) {
+    const fVal = String(keteranganData[r]?.[0] || "");
+    if (fVal.startsWith("A.") || fVal.startsWith("B.") || fVal.startsWith("C.") || fVal.startsWith("D.")) {
+      mergesKet.push({ s: { r, c: 0 }, e: { r, c: 2 } });
+    }
+  }
+  wsKeterangan["!merges"] = mergesKet;
 
   tabColorMap["KETERANGAN"] = "6B7280";
 

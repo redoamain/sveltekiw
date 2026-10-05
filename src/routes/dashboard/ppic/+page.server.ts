@@ -25,11 +25,8 @@ import { exportPlanToExcel } from '$lib/export';
 import { fail, redirect } from '@sveltejs/kit';
 
 export const load: PageServerLoad = async ({ url }) => {
-	const today = todayISO();
-	const defaultStart = daysAgoISO(30);
-
-	const tgl1 = url.searchParams.get('tgl1') ?? defaultStart;
-	const tgl2 = url.searchParams.get('tgl2') ?? today;
+	const tgl1 = (url.searchParams.get('tgl1') ?? '').trim();
+	const tgl2 = (url.searchParams.get('tgl2') ?? '').trim();
 	const q = (url.searchParams.get('q') ?? '').trim();
 	const sourceRaw = (url.searchParams.get('source') ?? 'spk').toLowerCase();
 	const source: 'spk' | 'so' = sourceRaw === 'so' ? 'so' : 'spk';
@@ -44,7 +41,7 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	// Fetch orders, committed, overrides, and records concurrently
 	const [pagedResult, committedResult, overridesResult, recordsResult] = await Promise.all([
-		getActiveOrdersPaged(tgl1, tgl2, page, pageSize, q || undefined, source).catch((err: any) => {
+		getActiveOrdersPaged(tgl1 || undefined, tgl2 || undefined, page, pageSize, q || undefined, source).catch((err: any) => {
 			loadError = err?.message || (source === 'so' ? 'Gagal memuat Sales Order' : 'Gagal memuat SPK');
 			return { rows: [], total: 0, totalQty: 0 };
 		}),
@@ -149,9 +146,9 @@ export const load: PageServerLoad = async ({ url }) => {
 export const actions: Actions = {
 	hitung: async ({ request, url }) => {
 		const fd = await request.formData();
-		const tgl1 = String(fd.get('tgl1') ?? '');
-		const tgl2 = String(fd.get('tgl2') ?? '');
-		const q = String(fd.get('q') ?? '');
+		const tgl1 = String(fd.get('tgl1') ?? '').trim();
+		const tgl2 = String(fd.get('tgl2') ?? '').trim();
+		const q = String(fd.get('q') ?? '').trim();
 		const source = (String(fd.get('source') ?? 'spk').toLowerCase() === 'so' ? 'so' : 'spk') as 'spk' | 'so';
 		const page = String(fd.get('page') ?? '1');
 		const pageSize = String(fd.get('pageSize') ?? '50');
@@ -163,11 +160,13 @@ export const actions: Actions = {
 		}
 
 		try {
-			const allOrders = await getActiveOrders(tgl1, tgl2, q || undefined, source);
+			const allOrders = await getActiveOrders(tgl1 || undefined, tgl2 || undefined, q || undefined, source);
 			const computed = await computePlan(allOrders, selectedSpks, source);
 			const planId = storePlan(computed);
 
-			const p = new URLSearchParams({ tgl1, tgl2, page, pageSize, source, planId });
+			const p = new URLSearchParams({ page, pageSize, source, planId });
+			if (tgl1) p.set('tgl1', tgl1);
+			if (tgl2) p.set('tgl2', tgl2);
 			if (q) p.set('q', q);
 			throw redirect(303, `/dashboard/ppic?${p.toString()}`);
 		} catch (err: any) {
