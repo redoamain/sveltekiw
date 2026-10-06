@@ -68,7 +68,8 @@ export const load: PageServerLoad = async ({ url }) => {
 				summary: stored.summary,
 				planId: planIdParam,
 				spkList: stored.groups.map((g) => g.No_SPK),
-				sourceType: stored.sourceType ?? source
+				sourceType: stored.sourceType ?? source,
+				trees: stored.trees ?? []
 			};
 		}
 	}

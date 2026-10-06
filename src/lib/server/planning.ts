@@ -8,13 +8,18 @@ import { BoundedCache } from "@/lib/cache";
 import {
   aggregateByKodeBarang,
   buildPlan,
+  buildPlanTrees,
   buildTreeStructure,
+  buildTreeStructureWithDuplicates,
+  calculateAccumulatedQty,
   groupOrdersBySpk,
   isINJECTIONDepartment,
   normalizeItemId,
   type PlanMaterialRow,
   type PlanSummary,
+  type PlanTreeNode,
   type SpkGroup,
+  type SpkPlanTree,
 } from "@/lib/domain/material";
 import type {
   BomItem,
@@ -499,6 +504,115 @@ export async function getBomBatch(
   return map;
 }
 
+/** Ambil struktur BOM tree interaktif lengkap dengan stok untuk satu SPK / SO spesifik tanpa kalkulasi batch */
+export async function getSpkBomTree(params: {
+  kodeBarang: string;
+  targetQty?: number;
+  noSPK?: string;
+  namaPO?: string;
+  namaBarang?: string;
+  tanggalOrder?: string;
+  planDate?: string;
+}): Promise<SpkPlanTree> {
+  const {
+    kodeBarang,
+    targetQty = 1,
+    noSPK = "",
+    namaPO = "",
+    namaBarang = "",
+    tanggalOrder,
+    planDate,
+  } = params;
+
+  const bom = await getBom(kodeBarang);
+  const flatBom = bom.flat ?? [];
+  const components = flatBom.filter((b) => Number(b.Level) > 0);
+
+  const accumulatedMap = calculateAccumulatedQty(flatBom);
+  const treeStructure = buildTreeStructureWithDuplicates(components);
+
+  // Ambil stok komponen
+  const itemIds = components.map((c) => c.ItemID);
+  const asOf = tanggalOrder ?? todayISO();
+  const stockRows = await getStockBatch(itemIds, 8, asOf);
+
+  let totalNodes = 0;
+  let maxLevel = 0;
+  let aman = 0;
+  let kurang = 0;
+  let habis = 0;
+
+  const mapNode = (node: BomItem, idx: number, parentKey: string): PlanTreeNode => {
+    const level = Number(node.Level) || 1;
+    const itemId = normalizeItemId(node.ItemID);
+    const stockRow = stockRows.get(itemId);
+    const stockWincp = Number(stockRow?.SaldoAkhirFisik) || 0;
+    const stockAkhir = Number(stockRow?.SaldoAkhir) || 0;
+
+    const accumulatedKey = `${itemId}_L${level}`;
+    const accumulatedQty = accumulatedMap.get(accumulatedKey) ?? node.Qty;
+    const totalNeeded = accumulatedQty * (Number(targetQty) || 1);
+
+    const available = stockWincp - totalNeeded;
+    const shortage = Math.max(0, -available);
+
+    let status: "AMAN" | "KURANG" | "HABIS";
+    if (available >= 0) status = "AMAN";
+    else if (stockWincp > 0) status = "KURANG";
+    else status = "HABIS";
+
+    totalNodes++;
+    if (level > maxLevel) maxLevel = level;
+    if (status === "AMAN") aman++;
+    else if (status === "KURANG") kurang++;
+    else habis++;
+
+    const currentKey = `${parentKey}_${itemId}_L${level}_${idx}`;
+    const children = (node.children || []).map((ch, cIdx) => mapNode(ch, cIdx, currentKey));
+
+    return {
+      id: currentKey,
+      itemId: node.ItemID,
+      itemName: node.ItemName || node.ItemID,
+      itemName2: node.ItemName2 || undefined,
+      departemen: node.Departemen || "LAINNYA",
+      level,
+      qtyPerUnit: node.Qty,
+      accumulatedQty,
+      totalNeeded,
+      stockWincp,
+      stockAkhir,
+      qtyReserved: 0,
+      available,
+      shortage,
+      status,
+      children,
+    };
+  };
+
+  const treeNodes = treeStructure.map((root, rIdx) =>
+    mapNode(root, rIdx, `preview_${noSPK}_${kodeBarang}`),
+  );
+
+  return {
+    noSPK: noSPK || kodeBarang,
+    namaPO: namaPO || "-",
+    kodeBarang,
+    namaBarang: namaBarang || kodeBarang,
+    targetQty: Number(targetQty) || 1,
+    tanggalOrder,
+    planDate,
+    tree: treeNodes,
+    stats: {
+      totalNodes,
+      maxLevel,
+      aman,
+      kurang,
+      habis,
+    },
+  };
+}
+
 // =====================================================================
 // PLAN — hitung kebutuhan material + penyimpanan sementara antar request
 // =====================================================================
@@ -516,6 +630,7 @@ export interface ComputedPlan {
   stockRows: Map<string, StockRow>;
   reservations: StockReservation[];
   sourceType?: PlanningSourceType;
+  trees?: SpkPlanTree[];
 }
 
 export async function computePlan(
@@ -580,8 +695,9 @@ export async function computePlan(
   // 4. Logika murni (klaim kiw): komponen diakumulasi antar-level,
   //    stok = SaldoAkhirFisik, + QtyReserved PO lain.
   const { rows, summary } = buildPlan(agg, bomByKodeBarang, stockRows, reservationsByItem);
+  const trees = buildPlanTrees(groups, bomByKodeBarang, stockRows, reservationsByItem);
 
-  return { rows, summary, agg, groups, bomByKodeBarang, stockRows, reservations, sourceType };
+  return { rows, summary, agg, groups, bomByKodeBarang, stockRows, reservations, sourceType, trees };
 }
 
 // Penyimpanan plan antara POST hitung → commit/simpan/export (tanpa hidden JSON besar).

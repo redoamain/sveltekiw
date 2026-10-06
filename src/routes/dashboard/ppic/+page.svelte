@@ -19,9 +19,12 @@
 		TableBody,
 		TableCell,
 		LoadingOverlay,
+		LoadingSpinner,
 		Alert
 	} from '$lib/components';
 	import { toast } from '$lib/toast.svelte';
+	import type { SpkGroup, SpkPlanTree } from '$lib/domain/material';
+	import BOMTreeViewer from './BOMTreeViewer.svelte';
 	import {
 		ClipboardList,
 		Search,
@@ -33,7 +36,11 @@
 		CheckCircle,
 		AlertTriangle,
 		XCircle,
-		ShieldCheck
+		ShieldCheck,
+		FolderTree,
+		TableProperties,
+		ChevronRight,
+		ChevronDown
 	} from '@lucide/svelte';
 
 	let { data, form } = $props();
@@ -42,7 +49,74 @@
 	let docTypeLabel = $derived(isSO ? 'Sales Order' : 'SPK');
 	let docTypeShort = $derived(isSO ? 'SO' : 'SPK');
 
-	let activeTab = $state<'spk' | 'history' | 'overrides' | 'committed'>('spk');
+	let activeTab = $state<'spk' | 'hasil' | 'history' | 'overrides' | 'committed'>('spk');
+	let planViewMode = $state<'flat' | 'tree'>('tree');
+	let selectedExportMode = $state<'full' | 'simple' | 'no-tree' | 'erp-china'>('full');
+	let lastHandledPlanId = $state<string | null>(null);
+
+	$effect(() => {
+		const currentKey = data.plan?.planId || (data.planFromHistory ? 'history' : null);
+		if (currentKey && currentKey !== lastHandledPlanId) {
+			lastHandledPlanId = currentKey;
+			activeTab = 'hasil';
+		}
+	});
+
+	// Rincian bahan on-demand langsung di bawah baris (tanpa hitung material)
+	let treeCache = new Map<string, SpkPlanTree>();
+	let inlineExpandedSpk = $state<string | null>(null);
+	let inlineLoading = $state(false);
+	let inlineTrees = $state<Record<string, SpkPlanTree[]>>({});
+
+	async function fetchTreesForSpk(g: SpkGroup): Promise<SpkPlanTree[]> {
+		const results: SpkPlanTree[] = [];
+		for (const line of g.lines) {
+			const cacheKey = `${g.No_SPK}_${line.Kode_Barang}_${line.QTY}`;
+			if (treeCache.has(cacheKey)) {
+				results.push(treeCache.get(cacheKey)!);
+				continue;
+			}
+
+			const params = new URLSearchParams({
+				itemid: line.Kode_Barang,
+				qty: String(line.QTY || 1),
+				noSPK: g.No_SPK,
+				namaPO: g.Nama_PO || '',
+				namaBarang: line.Nama_Barang || '',
+			});
+			if (line.Tanggal_Order) params.set('tanggalOrder', line.Tanggal_Order);
+			if (line.Plan_Date) params.set('planDate', line.Plan_Date);
+
+			const res = await fetch(`/api/ppic/tree?${params.toString()}`);
+			const json = await res.json();
+			if (!res.ok) throw new Error(json.error || 'Gagal memuat rincian bahan');
+			const tree = json.tree as SpkPlanTree;
+			treeCache.set(cacheKey, tree);
+			results.push(tree);
+		}
+		return results;
+	}
+
+	async function toggleInlineTree(g: SpkGroup) {
+		if (inlineExpandedSpk === g.No_SPK) {
+			inlineExpandedSpk = null;
+			return;
+		}
+		inlineExpandedSpk = g.No_SPK;
+		if (!inlineTrees[g.No_SPK]) {
+			inlineLoading = true;
+			try {
+				const trees = await fetchTreesForSpk(g);
+				if (trees.length > 0) {
+					inlineTrees[g.No_SPK] = trees;
+				}
+			} catch (err: any) {
+				toast.error('Gagal', err?.message || 'Gagal memuat BOM Tree');
+			} finally {
+				inlineLoading = false;
+			}
+		}
+	}
 	let loading = $state(false);
 	let loadingMsg = $state('Memproses...');
 	let selectedSpks = $state<string[]>([]);
@@ -143,38 +217,66 @@
 		<button
 			type="button"
 			onclick={() => (activeTab = 'spk')}
-			class="rounded-xl border-[3px] border-border px-4 py-2 text-xs font-black uppercase tracking-wide transition-all cursor-pointer brutal-shadow-sm
+			class="rounded-xl border-[3px] border-border px-4 py-2 text-xs font-black uppercase tracking-wide transition-all cursor-pointer brutal-shadow-sm flex items-center gap-1.5
 				{activeTab === 'spk' ? 'bg-primary text-primary-foreground -translate-x-px -translate-y-px' : 'bg-card text-foreground hover:bg-muted'}"
 		>
-			{docTypeShort} & Hitung Material
+			<ClipboardList class="size-4" />
+			Pilih {docTypeShort}
+		</button>
+		<button
+			type="button"
+			onclick={() => (activeTab = 'hasil')}
+			class="rounded-xl border-[3px] border-border px-4 py-2 text-xs font-black uppercase tracking-wide transition-all cursor-pointer brutal-shadow-sm flex items-center gap-1.5
+				{activeTab === 'hasil' ? 'bg-primary text-primary-foreground -translate-x-px -translate-y-px' : 'bg-card text-foreground hover:bg-muted'}"
+		>
+			<FolderTree class="size-4" />
+			Hasil Kebutuhan Bahan
+			{#if data.plan}
+				<span class="rounded bg-warning text-black px-1.5 py-0.5 font-mono text-[10px] font-black">
+					AKTIF
+				</span>
+			{/if}
 		</button>
 		<button
 			type="button"
 			onclick={() => (activeTab = 'history')}
-			class="rounded-xl border-[3px] border-border px-4 py-2 text-xs font-black uppercase tracking-wide transition-all cursor-pointer brutal-shadow-sm
+			class="rounded-xl border-[3px] border-border px-4 py-2 text-xs font-black uppercase tracking-wide transition-all cursor-pointer brutal-shadow-sm flex items-center gap-1.5
 				{activeTab === 'history' ? 'bg-primary text-primary-foreground -translate-x-px -translate-y-px' : 'bg-card text-foreground hover:bg-muted'}"
 		>
-			History Perhitungan ({data.records.length})
+			<History class="size-4" />
+			Riwayat Perhitungan ({data.records.length})
 		</button>
 		<button
 			type="button"
 			onclick={() => (activeTab = 'overrides')}
-			class="rounded-xl border-[3px] border-border px-4 py-2 text-xs font-black uppercase tracking-wide transition-all cursor-pointer brutal-shadow-sm
+			class="rounded-xl border-[3px] border-border px-4 py-2 text-xs font-black uppercase tracking-wide transition-all cursor-pointer brutal-shadow-sm flex items-center gap-1.5
 				{activeTab === 'overrides' ? 'bg-primary text-primary-foreground -translate-x-px -translate-y-px' : 'bg-card text-foreground hover:bg-muted'}"
 		>
-			BOM Override ({data.overrides.length})
+			<Plus class="size-4" />
+			Penyesuaian Bahan ({data.overrides.length})
 		</button>
 		<button
 			type="button"
 			onclick={() => (activeTab = 'committed')}
-			class="rounded-xl border-[3px] border-border px-4 py-2 text-xs font-black uppercase tracking-wide transition-all cursor-pointer brutal-shadow-sm
+			class="rounded-xl border-[3px] border-border px-4 py-2 text-xs font-black uppercase tracking-wide transition-all cursor-pointer brutal-shadow-sm flex items-center gap-1.5
 				{activeTab === 'committed' ? 'bg-primary text-primary-foreground -translate-x-px -translate-y-px' : 'bg-card text-foreground hover:bg-muted'}"
 		>
-			Dokumen Ter-commit ({data.committed.committedPOs.length})
+			<ShieldCheck class="size-4" />
+			Sudah Direservasi ({data.committed.committedPOs.length})
 		</button>
 	</div>
 
 	{#if activeTab === 'spk'}
+		<!-- Petunjuk Sederhana untuk Pengguna -->
+		<div class="rounded-xl border-2 border-primary/40 bg-primary/5 p-3 flex flex-wrap items-center justify-between gap-2 text-xs brutal-shadow-xs">
+			<div class="flex items-center gap-2">
+				<span class="text-base select-none">💡</span>
+				<p class="font-medium text-foreground">
+					<strong>Cara Cepat:</strong> Klik tombol <strong>"Rincian Bahan"</strong> pada baris mana pun untuk langsung memeriksa stok komponennya di bawah baris tersebut. Atau centang beberapa baris lalu klik <strong>"Hitung Kebutuhan Material"</strong> untuk perhitungan massal.
+				</p>
+			</div>
+		</div>
+
 		<!-- Source selector (SPK vs Sales Order) -->
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div class="flex items-center gap-1.5 bg-card p-1.5 rounded-xl border-[3px] border-border brutal-shadow">
@@ -198,6 +300,26 @@
 				</Badge>
 			{/if}
 		</div>
+
+		{#if data.plan}
+			<div class="border-border bg-primary/10 brutal-shadow-xs flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 p-3">
+				<div class="flex items-center gap-2">
+					<FolderTree class="text-primary size-5" />
+					<span class="font-bold text-xs">
+						Hasil perhitungan aktif untuk <strong>{data.plan.spkList?.length || 0} {docTypeShort}</strong> ({data.plan.summary?.totalMaterials || 0} material) siap ditampilkan.
+					</span>
+				</div>
+				<Button
+					type="button"
+					variant="primary"
+					size="sm"
+					onclick={() => (activeTab = 'hasil')}
+					class="border-2 text-xs font-black uppercase cursor-pointer"
+				>
+					<FolderTree class="mr-1.5 size-3.5" /> Buka Tab Hasil Hitung & BOM Tree &rarr;
+				</Button>
+			</div>
+		{/if}
 
 		<!-- Filter bar -->
 		<form
@@ -327,6 +449,7 @@
 						{/each}
 						<select
 							name="mode"
+							bind:value={selectedExportMode}
 							aria-label="Format Template Excel"
 							title="Pilih Format Template Excel"
 							class="h-10 px-2.5 bg-background border-[3px] border-border font-mono text-xs font-black uppercase tracking-wider brutal-shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary"
@@ -358,12 +481,13 @@
 							<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Barang & QTY</TableHead>
 							<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Total QTY</TableHead>
 							<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Status</TableHead>
+							<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-center">Bahan & Komponen</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{#if data.groups.length === 0}
 							<TableRow>
-								<TableCell colspan={6} class="h-24 text-center">
+								<TableCell colspan={7} class="h-24 text-center">
 									<p class="font-mono text-xs font-black uppercase tracking-wide text-muted-foreground">
 										Tidak ada {docTypeLabel} aktif pada filter ini
 									</p>
@@ -373,7 +497,8 @@
 							{#each data.groups as g}
 								{@const isChecked = selectedSpks.includes(g.No_SPK)}
 								{@const isCommitted = data.committedSPKs.includes(g.No_SPK)}
-								<TableRow class="hover:bg-primary/5 {isChecked ? 'bg-primary/10' : ''}">
+								{@const isExpanded = inlineExpandedSpk === g.No_SPK}
+								<TableRow class="hover:bg-primary/5 {isChecked ? 'bg-primary/10' : ''} {isExpanded ? 'border-b-0 bg-muted/20' : ''}">
 									<TableCell class="text-center">
 										<input
 											type="checkbox"
@@ -402,7 +527,66 @@
 											<Badge variant="outline" class="font-mono text-[10px]">BELUM</Badge>
 										{/if}
 									</TableCell>
+									<TableCell class="text-center">
+										<button
+											type="button"
+											onclick={() => toggleInlineTree(g)}
+											class="inline-flex items-center gap-1.5 rounded-lg border-2 border-border px-2.5 py-1 font-mono text-xs font-black uppercase transition-all cursor-pointer brutal-shadow-xs
+												{isExpanded ? 'bg-primary text-primary-foreground -translate-y-0.5' : 'bg-background hover:bg-muted text-foreground'}"
+											title={isExpanded ? 'Tutup rincian bahan' : 'Buka rincian kebutuhan bahan di bawah'}
+										>
+											{#if isExpanded}
+												<ChevronDown class="size-3.5 stroke-[3]" />
+												<span>Tutup</span>
+											{:else}
+												<FolderTree class="size-3.5 text-primary" />
+												<span>Rincian</span>
+											{/if}
+										</button>
+									</TableCell>
 								</TableRow>
+								{#if isExpanded}
+									<TableRow class="border-b-2 border-border bg-muted/10">
+										<TableCell colspan={7} class="bg-muted/20 p-2 sm:p-3">
+											<div class="space-y-2 rounded-lg border-2 border-border bg-card p-2.5 sm:p-3 shadow-xs">
+												<div class="flex items-center justify-between border-b border-border/50 pb-1.5">
+													<div class="flex items-center gap-2">
+														<FolderTree class="size-3.5 text-primary" />
+														<span class="font-mono text-xs font-black uppercase text-foreground">
+															Rincian Kebutuhan Bahan: {g.No_SPK} ({g.Nama_PO || '-'})
+														</span>
+													</div>
+													<button
+														type="button"
+														onclick={() => toggleInlineTree(g)}
+														class="rounded border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-bold text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+													>
+														✕ Tutup
+													</button>
+												</div>
+
+												{#if inlineLoading && !inlineTrees[g.No_SPK]}
+													<div class="flex items-center justify-center gap-2 py-6">
+														<LoadingSpinner class="size-4 text-primary" />
+														<span class="font-mono text-xs text-muted-foreground animate-pulse">
+															Memeriksa stok bahan...
+														</span>
+													</div>
+												{:else if inlineTrees[g.No_SPK] && inlineTrees[g.No_SPK].length > 0}
+													<BOMTreeViewer
+														trees={inlineTrees[g.No_SPK]}
+														source={data.source}
+														bind:exportMode={selectedExportMode}
+													/>
+												{:else}
+													<p class="py-3 text-center font-mono text-xs text-muted-foreground">
+														Tidak ada data bahan untuk dokumen ini.
+													</p>
+												{/if}
+											</div>
+										</TableCell>
+									</TableRow>
+								{/if}
 							{/each}
 						{/if}
 					</TableBody>
@@ -425,10 +609,10 @@
 				/>
 			</div>
 		</div>
-
-		<!-- Hasil Perhitungan (Plan) Section -->
+	{:else if activeTab === 'hasil'}
+		<!-- Tab Hasil Perhitungan & BOM Tree -->
 		{#if data.plan}
-			<div class="space-y-4 pt-4 border-t-4 border-border">
+			<div class="space-y-4">
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div>
 						<h2 class="text-2xl font-black uppercase tracking-tight" style="font-family: var(--font-display)">
@@ -446,6 +630,26 @@
 					</div>
 
 					<div class="flex flex-wrap items-center gap-2">
+						<!-- Toggle Mode: Flat vs Tree -->
+						{#if data.plan.trees && data.plan.trees.length > 0}
+							<div class="border-border bg-card flex rounded-lg border-2 p-0.5 brutal-shadow-xs">
+								<button
+									type="button"
+									onclick={() => (planViewMode = 'flat')}
+									class="flex items-center gap-1.5 rounded-md px-3 py-1 font-mono text-xs font-black uppercase transition-all cursor-pointer {planViewMode === 'flat' ? 'bg-primary text-primary-foreground brutal-shadow-xs' : 'text-muted-foreground hover:text-foreground'}"
+								>
+									<TableProperties class="size-3.5" /> Tabel Rekapitulasi
+								</button>
+								<button
+									type="button"
+									onclick={() => (planViewMode = 'tree')}
+									class="flex items-center gap-1.5 rounded-md px-3 py-1 font-mono text-xs font-black uppercase transition-all cursor-pointer {planViewMode === 'tree' ? 'bg-primary text-primary-foreground brutal-shadow-xs' : 'text-muted-foreground hover:text-foreground'}"
+								>
+									<FolderTree class="size-3.5" /> Pohon Komponen ({data.plan.trees.length})
+								</button>
+							</div>
+						{/if}
+
 						{#if !data.planFromHistory && data.plan.planId}
 							<!-- Simpan History Form -->
 							<form
@@ -511,70 +715,95 @@
 
 				<!-- Summary cards brutal -->
 				<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-					<StatCard label="Total Material" value={fmt(data.plan.summary.totalMaterials)} tone="primary" />
-					<StatCard label="Total Kebutuhan" value={fmt(data.plan.summary.totalNeeded)} tone="muted" />
-					<StatCard label="Kekurangan" value={fmt(data.plan.summary.totalShortage)} tone="error" />
-					<StatCard label="Status Aman" value={fmt(data.plan.summary.aman)} tone="success" />
-					<StatCard label="Status Kurang" value={fmt(data.plan.summary.kurang)} tone="warning" />
-					<StatCard label="Status Habis" value={fmt(data.plan.summary.habis)} tone="error" />
+					<StatCard label="Total Jenis Bahan" value={fmt(data.plan.summary.totalMaterials)} tone="primary" />
+					<StatCard label="Total Butuh (pcs)" value={fmt(data.plan.summary.totalNeeded)} tone="muted" />
+					<StatCard label="Total Kekurangan" value={fmt(data.plan.summary.totalShortage)} tone="error" />
+					<StatCard label="Bahan Cukup" value={fmt(data.plan.summary.aman)} tone="success" />
+					<StatCard label="Bahan Kurang" value={fmt(data.plan.summary.kurang)} tone="warning" />
+					<StatCard label="Bahan Kosong" value={fmt(data.plan.summary.habis)} tone="error" />
 				</div>
 
-				<!-- Material Requirements Table -->
-				<div class="bg-card overflow-hidden rounded-xl border-[3px] border-border brutal-shadow">
-					<div class="overflow-x-auto">
-						<Table wrapperClass="border-0 shadow-none rounded-none">
-							<TableHeader>
-								<TableRow class="bg-muted/50">
-									<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Status</TableHead>
-									<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Level</TableHead>
-									<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Item ID</TableHead>
-									<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Nama Barang</TableHead>
-									<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Dept</TableHead>
-									<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Kebutuhan</TableHead>
-									<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Stok WinCP</TableHead>
-									<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Saldo Akhir</TableHead>
-									<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Reserved</TableHead>
-									<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Total Butuh</TableHead>
-									<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Sisa Stok</TableHead>
-									<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Kekurangan</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{#each data.plan.rows as r}
-									{@const isAman = r.Status === 'AMAN'}
-									{@const isKurang = r.Status === 'KURANG'}
-									<TableRow class="hover:bg-primary/5">
-										<TableCell>
-											<Badge
-												variant={isAman ? 'success' : isKurang ? 'warning' : 'error'}
-												class="border-2 font-mono text-[10px]"
-											>
-												{r.Status}
-											</Badge>
-										</TableCell>
-										<TableCell class="font-mono text-xs">{r.Level}</TableCell>
-										<TableCell class="font-mono text-xs font-black">{r.ItemID}</TableCell>
-										<TableCell class="max-w-56 truncate font-bold text-xs">{r.ItemName || '-'}</TableCell>
-										<TableCell>
-											<Badge variant="secondary" class="font-mono text-[10px]">{r.Departemen || '-'}</Badge>
-										</TableCell>
-										<TableCell class="font-mono text-xs font-bold text-primary text-right">{fmt(r.TotalNeeded)}</TableCell>
-										<TableCell class="font-mono text-xs text-right">{fmt(r.StockWincp)}</TableCell>
-										<TableCell class="font-mono text-xs text-right">{fmt(r.StockAkhir)}</TableCell>
-										<TableCell class="font-mono text-xs text-muted-foreground text-right">{fmt(r.QtyReserved)}</TableCell>
-										<TableCell class="font-mono text-xs font-bold text-right">{fmt(r.TotalDibutuhkan)}</TableCell>
-										<TableCell class="font-mono text-xs font-bold text-right {r.Available < 0 ? 'text-error' : 'text-success'}">
-											{fmt(r.Available)}
-										</TableCell>
-										<TableCell class="font-mono text-xs font-black text-right {r.Shortage > 0 ? 'text-error' : 'text-muted-foreground'}">
-											{r.Shortage > 0 ? `-${fmt(r.Shortage)}` : '0'}
-										</TableCell>
+				{#if planViewMode === 'tree' && data.plan.trees && data.plan.trees.length > 0}
+					<BOMTreeViewer
+						trees={data.plan.trees}
+						planId={data.plan.planId}
+						source={data.source}
+						bind:exportMode={selectedExportMode}
+					/>
+				{:else}
+					<!-- Material Requirements Table (Flat) -->
+					<div class="bg-card overflow-hidden rounded-xl border-[3px] border-border brutal-shadow">
+						<div class="overflow-x-auto">
+							<Table wrapperClass="border-0 shadow-none rounded-none">
+								<TableHeader>
+									<TableRow class="bg-muted/50">
+										<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Status</TableHead>
+										<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Level</TableHead>
+										<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Item ID</TableHead>
+										<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Nama Barang</TableHead>
+										<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Dept</TableHead>
+										<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Kebutuhan</TableHead>
+										<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Stok WinCP</TableHead>
+										<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Saldo Akhir</TableHead>
+										<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Reserved</TableHead>
+										<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Total Butuh</TableHead>
+										<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Sisa Stok</TableHead>
+										<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest text-right">Kekurangan</TableHead>
 									</TableRow>
-								{/each}
-							</TableBody>
-						</Table>
+								</TableHeader>
+								<TableBody>
+									{#each data.plan.rows as r}
+										{@const isAman = r.Status === 'AMAN'}
+										{@const isKurang = r.Status === 'KURANG'}
+										<TableRow class="hover:bg-primary/5">
+											<TableCell>
+												<Badge
+													variant={isAman ? 'success' : isKurang ? 'warning' : 'error'}
+													class="border-2 font-mono text-[10px]"
+												>
+													{r.Status}
+												</Badge>
+											</TableCell>
+											<TableCell class="font-mono text-xs">{r.Level}</TableCell>
+											<TableCell class="font-mono text-xs font-black">{r.ItemID}</TableCell>
+											<TableCell class="max-w-56 truncate font-bold text-xs">{r.ItemName || '-'}</TableCell>
+											<TableCell>
+												<Badge variant="secondary" class="font-mono text-[10px]">{r.Departemen || '-'}</Badge>
+											</TableCell>
+											<TableCell class="font-mono text-xs font-bold text-primary text-right">{fmt(r.TotalNeeded)}</TableCell>
+											<TableCell class="font-mono text-xs text-right">{fmt(r.StockWincp)}</TableCell>
+											<TableCell class="font-mono text-xs text-right">{fmt(r.StockAkhir)}</TableCell>
+											<TableCell class="font-mono text-xs text-muted-foreground text-right">{fmt(r.QtyReserved)}</TableCell>
+											<TableCell class="font-mono text-xs font-bold text-right">{fmt(r.TotalDibutuhkan)}</TableCell>
+											<TableCell class="font-mono text-xs font-bold text-right {r.Available < 0 ? 'text-error' : 'text-success'}">
+												{fmt(r.Available)}
+											</TableCell>
+											<TableCell class="font-mono text-xs font-black text-right {r.Shortage > 0 ? 'text-error' : 'text-muted-foreground'}">
+												{r.Shortage > 0 ? `-${fmt(r.Shortage)}` : '0'}
+											</TableCell>
+										</TableRow>
+									{/each}
+								</TableBody>
+							</Table>
+						</div>
 					</div>
-				</div>
+				{/if}
+			</div>
+		{:else}
+			<div class="border-border bg-card brutal-shadow rounded-xl border-[3px] p-12 text-center space-y-4">
+				<FolderTree class="text-muted-foreground mx-auto size-12" />
+				<h3 class="font-black text-lg uppercase" style="font-family: var(--font-display)">Belum Ada Perhitungan Aktif</h3>
+				<p class="text-muted-foreground text-xs max-w-md mx-auto">
+					Silakan pilih satu atau beberapa {docTypeShort} pada tab <strong>Daftar {docTypeShort} & Pilih</strong>, lalu klik tombol <strong>Hitung Kebutuhan Material</strong>.
+				</p>
+				<Button
+					type="button"
+					variant="primary"
+					onclick={() => (activeTab = 'spk')}
+					class="border-2 text-xs font-black uppercase cursor-pointer"
+				>
+					<ClipboardList class="mr-1.5 size-3.5" /> Menuju Daftar {docTypeShort}
+				</Button>
 			</div>
 		{/if}
 	{:else if activeTab === 'history'}
@@ -831,3 +1060,4 @@
 		</div>
 	{/if}
 </div>
+

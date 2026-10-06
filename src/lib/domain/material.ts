@@ -355,3 +355,222 @@ export const buildPlan = (
 
   return { rows, summary };
 };
+
+// =====================================================================
+// STRUKTUR HIERARKI (BOM TREE) PER ORDER / SPK
+// =====================================================================
+export interface PlanTreeNode {
+  id: string;
+  itemId: string;
+  itemName: string;
+  itemName2?: string;
+  departemen: string;
+  level: number;
+  qtyPerUnit: number;
+  accumulatedQty: number;
+  totalNeeded: number;
+  stockWincp: number;
+  stockAkhir: number;
+  qtyReserved: number;
+  available: number;
+  shortage: number;
+  status: "AMAN" | "KURANG" | "HABIS";
+  children: PlanTreeNode[];
+}
+
+export interface SpkPlanTree {
+  noSPK: string;
+  namaPO: string;
+  kodeBarang: string;
+  namaBarang: string;
+  targetQty: number;
+  tanggalOrder?: string;
+  planDate?: string;
+  tree: PlanTreeNode[];
+  stats: {
+    totalNodes: number;
+    maxLevel: number;
+    aman: number;
+    kurang: number;
+    habis: number;
+  };
+}
+
+/** Bangun struktur tree BOM berjenjang mendukung duplikat parent-child */
+export const buildTreeStructureWithDuplicates = (flatBom: BomItem[]): BomItem[] => {
+  if (!flatBom || flatBom.length === 0) return [];
+  const nodeMap = new Map<string, BomItem>();
+  const rootItems: BomItem[] = [];
+
+  flatBom.forEach((item, idx) => {
+    const uniqueKey = `${normalizeItemId(item.ItemID)}_L${item.Level}_${idx}`;
+    nodeMap.set(uniqueKey, { ...item, children: [] });
+  });
+
+  flatBom.forEach((item, idx) => {
+    const uniqueKey = `${normalizeItemId(item.ItemID)}_L${item.Level}_${idx}`;
+    const node = nodeMap.get(uniqueKey);
+    if (!node) return;
+    const level = Number(item.Level);
+
+    if (level === 1) {
+      rootItems.push(node);
+    } else {
+      let parentFound = false;
+      if (item.ParentItemID) {
+        const parentNormalizedId = normalizeItemId(item.ParentItemID);
+        const parentKey = Array.from(nodeMap.keys()).find(
+          (key) =>
+            key.startsWith(parentNormalizedId) && key.includes(`_L${level - 1}_`),
+        );
+        if (parentKey) {
+          const parent = nodeMap.get(parentKey);
+          if (parent) {
+            if (!parent.children) parent.children = [];
+            parent.children.push(node);
+            parentFound = true;
+          }
+        }
+      }
+      if (!parentFound) {
+        const parentItem = flatBom.find((p) => Number(p.Level) === level - 1);
+        if (parentItem) {
+          const parentKey = `${normalizeItemId(parentItem.ItemID)}_L${parentItem.Level}_${flatBom.indexOf(parentItem)}`;
+          const parent = nodeMap.get(parentKey);
+          if (parent) {
+            if (!parent.children) parent.children = [];
+            parent.children.push(node);
+            parentFound = true;
+          }
+        }
+      }
+      if (!parentFound) rootItems.push(node);
+    }
+  });
+
+  const sortChildren = (nodes: BomItem[]) => {
+    nodes.sort((a, b) => {
+      if (Number(a.Level) !== Number(b.Level)) return Number(a.Level) - Number(b.Level);
+      return (a.ItemID || "").localeCompare(b.ItemID || "");
+    });
+    nodes.forEach((node) => {
+      if (node.children && node.children.length > 0) sortChildren(node.children);
+    });
+  };
+  sortChildren(rootItems);
+  return rootItems;
+};
+
+/** Bangun struktur BOM tree interaktif lengkap dengan metrik stok untuk seluruh SPK terpilih */
+export const buildPlanTrees = (
+  groups: SpkGroup[],
+  bomByKodeBarang: Map<string, BomItem[]>,
+  stockRows: Map<string, StockRow>,
+  reservationsByItem?: Map<string, number>,
+): SpkPlanTree[] => {
+  const result: SpkPlanTree[] = [];
+
+  for (const g of groups) {
+    for (const line of g.lines) {
+      const bomFlat = bomByKodeBarang.get(line.Kode_Barang) ?? [];
+      const components = bomFlat.filter((b) => Number(b.Level) > 0);
+      if (components.length === 0) continue;
+
+      const accumulatedMap = calculateAccumulatedQty(bomFlat);
+      const treeStructure = buildTreeStructureWithDuplicates(components);
+
+      let totalNodes = 0;
+      let maxLevel = 0;
+      let aman = 0;
+      let kurang = 0;
+      let habis = 0;
+
+      const mapNode = (node: BomItem, idx: number, parentKey: string): PlanTreeNode => {
+        const level = Number(node.Level) || 1;
+        const itemId = normalizeItemId(node.ItemID);
+        const stockRow = stockRows.get(itemId);
+        const stockWincp = Number(stockRow?.SaldoAkhirFisik) || 0;
+        const stockAkhir = Number(stockRow?.SaldoAkhir) || 0;
+        const qtyReserved = Number(reservationsByItem?.get(itemId)) || 0;
+
+        const accumulatedKey = `${itemId}_L${level}`;
+        const accumulatedQty = accumulatedMap.get(accumulatedKey) ?? node.Qty;
+        const totalNeeded = accumulatedQty * (Number(line.QTY) || 0);
+
+        const available = stockWincp - totalNeeded - qtyReserved;
+        const shortage = Math.max(0, -available);
+
+        let status: "AMAN" | "KURANG" | "HABIS";
+        if (available >= 0) status = "AMAN";
+        else if (stockWincp > 0) status = "KURANG";
+        else status = "HABIS";
+
+        totalNodes++;
+        if (level > maxLevel) maxLevel = level;
+        if (status === "AMAN") aman++;
+        else if (status === "KURANG") kurang++;
+        else habis++;
+
+        const currentKey = `${parentKey}_${itemId}_L${level}_${idx}`;
+        const children = (node.children || []).map((ch, cIdx) => mapNode(ch, cIdx, currentKey));
+
+        return {
+          id: currentKey,
+          itemId: node.ItemID,
+          itemName: node.ItemName || node.ItemID,
+          itemName2: node.ItemName2 || undefined,
+          departemen: node.Departemen || "LAINNYA",
+          level,
+          qtyPerUnit: node.Qty,
+          accumulatedQty,
+          totalNeeded,
+          stockWincp,
+          stockAkhir,
+          qtyReserved,
+          available,
+          shortage,
+          status,
+          children,
+        };
+      };
+
+      const treeNodes = treeStructure.map((root, rIdx) =>
+        mapNode(root, rIdx, `root_${g.No_SPK}_${line.Kode_Barang}`),
+      );
+
+      result.push({
+        noSPK: g.No_SPK,
+        namaPO: g.Nama_PO,
+        kodeBarang: line.Kode_Barang,
+        namaBarang: line.Nama_Barang || line.Kode_Barang,
+        targetQty: Number(line.QTY) || 0,
+        tanggalOrder: line.Tanggal_Order,
+        planDate: line.Plan_Date,
+        tree: treeNodes,
+        stats: {
+          totalNodes,
+          maxLevel,
+          aman,
+          kurang,
+          habis,
+        },
+      });
+    }
+  }
+
+  return result;
+};
+
+/** Utility warna badge departemen bergaya neobrutalism */
+export function getDeptBadgeClass(dept: string): string {
+  const d = (dept || "").trim().toUpperCase();
+  if (d.includes("INJEKSI-BB") || d.includes("INJEKSI BB")) return "bg-slate-200 text-slate-800 border-slate-400";
+  if (d.includes("INJEK") || d.includes("INJ")) return "bg-blue-100 text-blue-900 border-blue-400";
+  if (d.includes("SPRAY") || d === "SP") return "bg-cyan-100 text-cyan-900 border-cyan-400";
+  if (d.includes("MOULD") || d === "MO") return "bg-amber-100 text-amber-900 border-amber-400";
+  if (d.includes("PLAT") || d === "PL") return "bg-purple-100 text-purple-900 border-purple-400";
+  if (d.includes("ASS") || d === "AS") return "bg-emerald-100 text-emerald-900 border-emerald-400";
+  if (d.includes("PACK") || d === "PC") return "bg-pink-100 text-pink-900 border-pink-400";
+  if (d.includes("LOG") || d === "LG") return "bg-indigo-100 text-indigo-900 border-indigo-400";
+  return "bg-muted text-foreground border-border";
+}

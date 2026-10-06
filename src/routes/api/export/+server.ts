@@ -3,6 +3,13 @@ import { log } from "$lib/db";
 import { computePlan, getCommitted, getActiveOrders, getStoredPlan } from "$lib/server/planning";
 import { exportPlanToExcel } from "$lib/export";
 import { errorMessage } from "$lib/http";
+import type { BomItem } from "$lib/types";
+
+export interface TreeAdjustments {
+  excludedItemIds?: string[];
+  customQuantities?: Record<string, number>;
+  substitutions?: Record<string, { itemId: string; itemName: string }>;
+}
 
 function parseExportMode(val?: string | null): "full" | "simple" | "no-tree" | "erp-china" {
   const clean = (val ?? "").trim().toLowerCase();
@@ -20,8 +27,9 @@ async function doExportPlan(params: {
   spks?: string[];
   source?: "spk" | "so";
   mode?: "full" | "simple" | "no-tree" | "erp-china";
+  adjustments?: TreeAdjustments;
 }) {
-  const { planId, tgl1, tgl2, q, spks, source = "spk", mode = "full" } = params;
+  const { planId, tgl1, tgl2, q, spks, source = "spk", mode = "full", adjustments } = params;
 
   let stored = planId ? getStoredPlan(planId) : undefined;
   if (!stored) {
@@ -48,10 +56,51 @@ async function doExportPlan(params: {
     });
   }
 
+  // Terapkan penyesuaian dari Tree jika ada
+  let effectiveBom = stored.bomByKodeBarang;
+  if (adjustments) {
+    const { excludedItemIds = [], customQuantities = {}, substitutions = {} } = adjustments;
+    const excludedSet = new Set(excludedItemIds.map((id) => (id || "").trim().toUpperCase()));
+
+    effectiveBom = new Map();
+    for (const [kodeBarang, items] of stored.bomByKodeBarang) {
+      const adjustedItems: BomItem[] = [];
+
+      for (const item of items) {
+        const idUpper = (item.ItemID || "").trim().toUpperCase();
+        // 1. Filter item yang di-uncheck
+        if (excludedSet.has(idUpper)) {
+          continue;
+        }
+
+        const clone: BomItem = { ...item };
+
+        // 2. Substitusi bahan
+        if (substitutions[idUpper] || substitutions[item.ItemID]) {
+          const s = substitutions[idUpper] || substitutions[item.ItemID];
+          clone.ItemID = s.itemId;
+          clone.ItemName = s.itemName;
+        }
+
+        // 3. Custom Quantity
+        if (customQuantities[idUpper] !== undefined || customQuantities[item.ItemID] !== undefined) {
+          const customVal = customQuantities[idUpper] ?? customQuantities[item.ItemID];
+          if (customVal >= 0) {
+            clone.Qty = customVal;
+          }
+        }
+
+        adjustedItems.push(clone);
+      }
+
+      effectiveBom.set(kodeBarang, adjustedItems);
+    }
+  }
+
   const { reservations } = await getCommitted();
   const { buffer, fileName } = await exportPlanToExcel({
     groups: stored.groups,
-    bomByKodeBarang: stored.bomByKodeBarang,
+    bomByKodeBarang: effectiveBom,
     stockRows: stored.stockRows,
     reservations,
     mode,
@@ -89,21 +138,59 @@ export const GET: RequestHandler = async ({ url }) => {
 
 export const POST: RequestHandler = async ({ request, url }) => {
   try {
-    const fd = await request.formData();
-    const planId = String(fd.get("planId") ?? url.searchParams.get("planId") ?? "").trim() || undefined;
-    const tgl1 = String(fd.get("tgl1") ?? url.searchParams.get("tgl1") ?? "").trim() || undefined;
-    const tgl2 = String(fd.get("tgl2") ?? url.searchParams.get("tgl2") ?? "").trim() || undefined;
-    const q = String(fd.get("q") ?? url.searchParams.get("q") ?? "").trim() || undefined;
-    const source = (String(fd.get("source") ?? url.searchParams.get("source") ?? "spk").trim().toLowerCase() === "so" ? "so" : "spk") as "spk" | "so";
-    const mode = parseExportMode(String(fd.get("mode") ?? url.searchParams.get("mode") ?? "full"));
+    let planId: string | undefined;
+    let tgl1: string | undefined;
+    let tgl2: string | undefined;
+    let q: string | undefined;
+    let source: "spk" | "so" = "spk";
+    let mode: "full" | "simple" | "no-tree" | "erp-china" = "full";
+    let spks: string[] = [];
+    let adjustments: TreeAdjustments | undefined;
 
-    let spks = fd.getAll("spk").map(String).filter(Boolean);
-    if (spks.length === 0) {
-      const spkParam = url.searchParams.get("spk")?.trim() || "";
-      if (spkParam) spks = spkParam.split(",").map((s) => s.trim()).filter(Boolean);
+    const contentType = request.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const body = await request.json().catch(() => ({}));
+      planId = body.planId || undefined;
+      tgl1 = body.tgl1 || undefined;
+      tgl2 = body.tgl2 || undefined;
+      q = body.q || undefined;
+      source = body.source === "so" ? "so" : "spk";
+      mode = parseExportMode(body.mode);
+      spks = Array.isArray(body.spks) ? body.spks : [];
+      adjustments = body.adjustments;
+    } else {
+      const fd = await request.formData();
+      planId = String(fd.get("planId") ?? url.searchParams.get("planId") ?? "").trim() || undefined;
+      tgl1 = String(fd.get("tgl1") ?? url.searchParams.get("tgl1") ?? "").trim() || undefined;
+      tgl2 = String(fd.get("tgl2") ?? url.searchParams.get("tgl2") ?? "").trim() || undefined;
+      q = String(fd.get("q") ?? url.searchParams.get("q") ?? "").trim() || undefined;
+      source = (String(fd.get("source") ?? url.searchParams.get("source") ?? "spk").trim().toLowerCase() === "so" ? "so" : "spk") as "spk" | "so";
+      mode = parseExportMode(String(fd.get("mode") ?? url.searchParams.get("mode") ?? "full"));
+
+      spks = fd.getAll("spk").map(String).filter(Boolean);
+      if (spks.length === 0) {
+        const spkParam = url.searchParams.get("spk")?.trim() || "";
+        if (spkParam) spks = spkParam.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+
+      const adjRaw = fd.get("adjustments");
+      if (adjRaw && typeof adjRaw === "string") {
+        try {
+          adjustments = JSON.parse(adjRaw);
+        } catch {}
+      }
     }
 
-    return await doExportPlan({ planId, tgl1, tgl2, q, spks: spks.length > 0 ? spks : undefined, source, mode });
+    return await doExportPlan({
+      planId,
+      tgl1,
+      tgl2,
+      q,
+      spks: spks.length > 0 ? spks : undefined,
+      source,
+      mode,
+      adjustments
+    });
   } catch (error) {
     log.error({ err: error }, "Gagal export Excel PPIC POST");
     return new Response(JSON.stringify({ error: errorMessage(error, "Gagal export Excel") }), {
@@ -112,5 +199,3 @@ export const POST: RequestHandler = async ({ request, url }) => {
     });
   }
 };
-
-

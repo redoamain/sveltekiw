@@ -22,6 +22,8 @@ export { default as ConfirmModal } from './ConfirmModal.svelte';
 export { default as EmptyState } from './EmptyState.svelte';
 export { default as Combobox } from './Combobox.svelte';
 export type { ComboboxOption } from './Combobox.svelte';
+export { default as ItemCombobox } from './ItemCombobox.svelte';
+export type { ItemOption } from './ItemCombobox.svelte';
 export { default as ErrorDisplay } from './ErrorDisplay.svelte';
 export { default as KopSuratCitiPlumb } from './KopSuratCitiPlumb.svelte';
 
