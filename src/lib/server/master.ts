@@ -257,6 +257,43 @@ export async function getMasterGoodsPaged(
   };
 }
 
+/**
+ * Ambil seluruh data master barang (tanpa limit pagination) untuk export
+ */
+export async function getAllMasterGoods(q?: string): Promise<MasterItem[]> {
+  const keyword = (q ?? "").trim();
+  const hasSearch = keyword.length > 0;
+  const like = `%${keyword}%`;
+
+  const searchColumns = [
+    "a.[ItemID]",
+    "a.[ItemName]",
+    "a.[namebc]",
+    "a.[ItemName2]",
+    "a.[Mark]",
+    "b.[NamaJenis]",
+    "a.[warna]",
+    "a.[warnac]",
+  ];
+
+  const whereClause = hasSearch
+    ? `WHERE (${searchColumns.map((col) => `${col} LIKE @q`).join(" OR ")})`
+    : "";
+
+  const searchParams = hasSearch
+    ? [{ name: "q", type: sql.NVarChar(255), value: like }]
+    : [];
+
+  const query = `
+    ${BASE_SELECT}
+    ${whereClause}
+    ${ORDER_BY_DESC}
+  `;
+
+  const result = await runQuery(query, searchParams);
+  return (result.recordset as DbRow[]).map(mapRow);
+}
+
 // ============ API HELPER ============
 
 export interface MasterApiParams {
@@ -831,6 +868,7 @@ export default {
   getMasterItem,
   masterItemExists,
   getMasterGoodsPaged,
+  getAllMasterGoods,
   getMasterForApi,
   getKindofGoods,
   getMasterReferenceData,

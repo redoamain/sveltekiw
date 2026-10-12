@@ -39,7 +39,20 @@
 
 	let loading = $state(false);
 	let loadingMsg = $state('Memuat...');
+	let exportLoading = $state(false);
 	let selected = $state<string[]>([]);
+
+	function handleExport(mode: 'all' | 'selected' | 'filter') {
+		exportLoading = true;
+		if (mode === 'all') {
+			toast.info('Export Excel', 'Menyiapkan berkas Excel seluruh master data barang...');
+		} else if (mode === 'selected') {
+			toast.info('Export Excel', `Mengekspor ${selected.length} barang terpilih...`);
+		} else {
+			toast.info('Export Excel', `Mengekspor data master barang sesuai pencarian "${data.q}"...`);
+		}
+		setTimeout(() => (exportLoading = false), 3500);
+	}
 
 	// Reset loading ketika data halaman selesai diperbarui oleh SvelteKit
 	$effect(() => {
@@ -290,6 +303,23 @@
 				>
 					<FileSpreadsheet class="size-4 mr-1.5" /> Import Excel
 				</Button>
+				<form
+					method="post"
+					action="/api/master/export"
+					onsubmit={() => handleExport('all')}
+					class="inline-flex"
+				>
+					<input type="hidden" name="exportAll" value="true" />
+					<Button
+						type="submit"
+						variant="secondary"
+						disabled={exportLoading}
+						class="h-10 border-[3px] font-black uppercase tracking-wide brutal-shadow-sm text-xs cursor-pointer"
+						title="Export seluruh katalog master data barang ke berkas Excel"
+					>
+						<Download class="size-4 mr-1.5" /> Export Semua Data
+					</Button>
+				</form>
 			</div>
 		{/snippet}
 	</PageHeader>
@@ -418,32 +448,69 @@
 					</button>
 				{/if}
 			</div>
-			<div class="flex items-center gap-2">
+			<div class="flex flex-wrap items-center gap-2">
 				<span class="bg-card border-border rounded-full border-2 px-3 py-1 font-mono text-[10px] font-black uppercase">
 					{data.total.toLocaleString('id-ID')} total • hal {data.page}
 				</span>
+
+				{#if selected.length > 0}
+					<form
+						method="post"
+						action="/api/master/export"
+						onsubmit={() => handleExport('selected')}
+						class="inline-flex"
+					>
+						{#each selected as id}
+							<input type="hidden" name="selected" value={id} />
+						{/each}
+						<Button
+							type="submit"
+							variant="primary"
+							disabled={exportLoading}
+							class="h-8 border-2 font-black uppercase tracking-wide brutal-shadow-sm text-xs cursor-pointer"
+							title={`Export ${selected.length} barang terpilih`}
+						>
+							<Download class="size-3.5 mr-1" />
+							Export ({selected.length} Terpilih)
+						</Button>
+					</form>
+				{:else if data.q}
+					<form
+						method="post"
+						action="/api/master/export"
+						onsubmit={() => handleExport('filter')}
+						class="inline-flex"
+					>
+						<input type="hidden" name="q" value={data.q} />
+						<Button
+							type="submit"
+							variant="secondary"
+							disabled={exportLoading}
+							class="h-8 border-2 font-black uppercase tracking-wide brutal-shadow-sm text-xs cursor-pointer"
+							title={`Export hasil pencarian "${data.q}"`}
+						>
+							<Download class="size-3.5 mr-1" />
+							Export Filter
+						</Button>
+					</form>
+				{/if}
+
 				<form
 					method="post"
 					action="/api/master/export"
-					onsubmit={() => {
-						loading = true;
-						loadingMsg = 'Menyiapkan Excel...';
-						toast.info('Export Excel', selected.length > 0 ? `Mengekspor ${selected.length} barang terpilih...` : 'Mengekspor data master barang...');
-						setTimeout(() => (loading = false), 3000);
-					}}
+					onsubmit={() => handleExport('all')}
 					class="inline-flex"
 				>
-					<input type="hidden" name="q" value={data.q} />
-					{#each selected as id}
-						<input type="hidden" name="selected" value={id} />
-					{/each}
+					<input type="hidden" name="exportAll" value="true" />
 					<Button
 						type="submit"
 						variant="secondary"
+						disabled={exportLoading}
 						class="h-8 border-2 font-black uppercase tracking-wide brutal-shadow-sm text-xs cursor-pointer"
+						title="Export seluruh katalog master data barang ke berkas Excel"
 					>
 						<Download class="size-3.5 mr-1" />
-						Export {selected.length > 0 ? `(${selected.length})` : 'Excel'}
+						Export Semua Data
 					</Button>
 				</form>
 			</div>
