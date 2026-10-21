@@ -5,6 +5,8 @@ import * as XLSX from "xlsx";
 export interface MasterItem {
   ItemID: string;
   ItemName: string;
+  ItemNameLama?: string;
+  itemNameLama?: string;
   namebc: string;
   /** alias dari ItemName2 — tetap sediakan ItemName2 untuk kompatibilitas */
   namecina: string;
@@ -28,6 +30,7 @@ export interface MasterItem {
 interface DbRow {
   ItemID: string;
   ItemName: string;
+  ItemNameLama?: string;
   namebc: string;
   namecina?: string;
   ItemName2?: string;
@@ -51,6 +54,7 @@ const BASE_SELECT = `
   SELECT
     a.[ItemID],
     a.[ItemName],
+    a.[ItemNameLama],
     a.[namebc],
     a.[ItemName2] AS namecina,
     a.[warna],
@@ -82,6 +86,7 @@ const createSqlParam = (name: string, value: string) => ({
 // ============ MAPPING ============
 const mapRow = (row: DbRow): MasterItem => {
   const namecina = row.namecina ?? row.ItemName2 ?? "";
+  const itemNameLama = row.ItemNameLama ?? "";
   const warna = row.warna ?? "";
   const warnac = row.warnac ?? "";
   const satuan = row.Satuan ?? row.SatuanKecil ?? "";
@@ -90,6 +95,8 @@ const mapRow = (row: DbRow): MasterItem => {
   return {
     ItemID: row.ItemID,
     ItemName: row.ItemName,
+    ItemNameLama: itemNameLama,
+    itemNameLama,
     namebc: row.namebc,
     namecina,
     ItemName2: namecina,
@@ -201,6 +208,7 @@ export async function getMasterGoodsPaged(
   const searchColumns = [
     "a.[ItemID]",
     "a.[ItemName]",
+    "a.[ItemNameLama]",
     "a.[namebc]",
     "a.[ItemName2]",
     "a.[Mark]",
@@ -268,6 +276,7 @@ export async function getAllMasterGoods(q?: string): Promise<MasterItem[]> {
   const searchColumns = [
     "a.[ItemID]",
     "a.[ItemName]",
+    "a.[ItemNameLama]",
     "a.[namebc]",
     "a.[ItemName2]",
     "a.[Mark]",
@@ -343,6 +352,7 @@ export async function getMasterForApi(
 export interface CreateMasterItemPayload {
   ItemID: string;
   ItemName: string;
+  ItemNameLama?: string;
   namebc?: string;
   ItemName2?: string;
   KodeJenis: string;
@@ -403,6 +413,7 @@ export async function createMasterItem(
 
   const mark = (payload.Mark ?? '').trim() || null;
   const satuanKecil = (payload.SatuanKecil ?? 'PCS').trim() || 'PCS';
+  const itemNameLama = (payload.ItemNameLama ?? '').trim() || null;
   const namebc = (payload.namebc ?? '').trim() || null;
   const itemName2 = (payload.ItemName2 ?? '').trim() || null;
   const spec = (payload.Spec ?? '').trim() || null;
@@ -413,11 +424,11 @@ export async function createMasterItem(
 
   const insertQ = `
     INSERT INTO [cp].[dbo].[taGoods] (
-      ItemID, ItemName, ItemNameBuy, ItemName2, namebc,
+      ItemID, ItemName, ItemNameBuy, ItemNameLama, ItemName2, namebc,
       KodeJenis, Mark, SatuanKecil, Spec, bahan, warna, warnac,
       UserName, UserDateTime, Delisted
     ) VALUES (
-      @ItemID, @ItemName, @ItemName, @ItemName2, @namebc,
+      @ItemID, @ItemName, @ItemName, @ItemNameLama, @ItemName2, @namebc,
       @KodeJenis, @Mark, @SatuanKecil, @Spec, @bahan, @warna, @warnac,
       @UserName, GETDATE(), 0
     )
@@ -426,6 +437,7 @@ export async function createMasterItem(
   await runQuery(insertQ, [
     { name: 'ItemID', type: sql.VarChar(40), value: cleanId },
     { name: 'ItemName', type: sql.VarChar(200), value: itemName },
+    { name: 'ItemNameLama', type: sql.VarChar(200), value: itemNameLama },
     { name: 'ItemName2', type: sql.NVarChar(800), value: itemName2 },
     { name: 'namebc', type: sql.NVarChar(800), value: namebc },
     { name: 'KodeJenis', type: sql.VarChar(5), value: kodeJenis },
@@ -460,6 +472,7 @@ export async function updateMasterItem(
   const kodeJenis = payload.KodeJenis !== undefined ? payload.KodeJenis.trim() : existing.KodeJenis;
   const mark = payload.Mark !== undefined ? (payload.Mark.trim() || null) : existing.Mark;
   const satuanKecil = payload.SatuanKecil !== undefined ? (payload.SatuanKecil.trim() || 'PCS') : existing.Satuan;
+  const itemNameLama = payload.ItemNameLama !== undefined ? (payload.ItemNameLama.trim() || null) : (existing.ItemNameLama || null);
   const namebc = payload.namebc !== undefined ? (payload.namebc.trim() || null) : existing.namebc;
   const itemName2 = payload.ItemName2 !== undefined ? (payload.ItemName2.trim() || null) : existing.ItemName2;
   const spec = payload.Spec !== undefined ? (payload.Spec.trim() || null) : existing.Spec;
@@ -473,6 +486,7 @@ export async function updateMasterItem(
     SET
       ItemName = @ItemName,
       ItemNameBuy = @ItemName,
+      ItemNameLama = @ItemNameLama,
       ItemName2 = @ItemName2,
       namebc = @namebc,
       KodeJenis = @KodeJenis,
@@ -490,6 +504,7 @@ export async function updateMasterItem(
   await runQuery(updateQ, [
     { name: 'ItemID', type: sql.VarChar(40), value: cleanId },
     { name: 'ItemName', type: sql.VarChar(200), value: itemName },
+    { name: 'ItemNameLama', type: sql.VarChar(200), value: itemNameLama },
     { name: 'ItemName2', type: sql.NVarChar(800), value: itemName2 },
     { name: 'namebc', type: sql.NVarChar(800), value: namebc },
     { name: 'KodeJenis', type: sql.VarChar(5), value: kodeJenis },
@@ -563,6 +578,7 @@ export async function generateMasterGoodsExcelTemplate(): Promise<Buffer> {
     [
       "Kode Barang (ItemID) *",
       "Nama Barang (ItemName) *",
+      "Nama Barang Lama (ItemNameLama)",
       "Kode Jenis *",
       "Nama Bea Cukai (namebc)",
       "Nama Mandarin (ItemName2)",
@@ -576,6 +592,7 @@ export async function generateMasterGoodsExcelTemplate(): Promise<Buffer> {
     [
       "CONTOH-BB-001",
       "BIJI PLASTIK PP HITAM",
+      "PP BLACK OLD",
       "K01",
       "BIJI PLASTIK PP",
       "PP 塑料颗粒 黑色",
@@ -589,6 +606,7 @@ export async function generateMasterGoodsExcelTemplate(): Promise<Buffer> {
     [
       "CONTOH-FG-001",
       "BODY KRAN AIR CHROME",
+      "BODY KRAN LAMA CHROME",
       "K02",
       "FAUCET BODY",
       "龙头主体 镀铬",
@@ -605,6 +623,7 @@ export async function generateMasterGoodsExcelTemplate(): Promise<Buffer> {
   ws["!cols"] = [
     { wch: 25 },
     { wch: 35 },
+    { wch: 30 },
     { wch: 15 },
     { wch: 25 },
     { wch: 25 },
@@ -650,6 +669,7 @@ export interface ParsedMasterItemRow {
   rowNumber: number;
   ItemID: string;
   ItemName: string;
+  ItemNameLama?: string;
   KodeJenis: string;
   namebc?: string;
   ItemName2?: string;
@@ -705,7 +725,8 @@ export async function parseMasterGoodsExcelImport(buffer: Buffer): Promise<Parse
 
   const colMap = {
     itemId: header.findIndex(h => h.includes("itemid") || h.includes("kode barang") || h.includes("kode")),
-    itemName: header.findIndex(h => h.includes("itemname") || h.includes("nama barang")),
+    itemName: header.findIndex(h => (h.includes("itemname") || h.includes("nama barang")) && !h.includes("lama")),
+    itemNameLama: header.findIndex(h => h.includes("itemnamelama") || h.includes("nama lama") || h.includes("barang lama")),
     kodeJenis: header.findIndex(h => h.includes("kode jenis") || h.includes("jenis")),
     namebc: header.findIndex(h => h.includes("namebc") || h.includes("bea cukai") || h.includes("bc")),
     itemName2: header.findIndex(h => h.includes("itemname2") || h.includes("mandarin") || h.includes("cina")),
@@ -739,6 +760,7 @@ export async function parseMasterGoodsExcelImport(buffer: Buffer): Promise<Parse
       rowNumber: headerIdx + i + 2,
       ItemID: cleanId,
       ItemName: rawName,
+      ItemNameLama: colMap.itemNameLama >= 0 ? String(r[colMap.itemNameLama] ?? "").trim() || undefined : undefined,
       KodeJenis: String(r[colMap.kodeJenis] ?? "").trim().toUpperCase() || 'K01',
       namebc: colMap.namebc >= 0 ? String(r[colMap.namebc] ?? "").trim() || undefined : undefined,
       ItemName2: colMap.itemName2 >= 0 ? String(r[colMap.itemName2] ?? "").trim() || undefined : undefined,

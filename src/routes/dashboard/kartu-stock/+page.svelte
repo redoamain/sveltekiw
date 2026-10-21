@@ -467,11 +467,6 @@
 								Saldo Awal ({fmt(stats.saldoAwal)}) + Masuk ({fmt(stats.totalMasuk)}) - Keluar ({fmt(stats.totalKeluar)}) = Saldo Akhir ({fmt(stats.saldoAkhir)} {stats.satuan})
 							</span>
 						</div>
-						<div class="flex items-center gap-2">
-							<Badge variant={stats.netto >= 0 ? 'default' : 'error'} class="font-mono text-xs font-black uppercase">
-								Netto: {stats.netto >= 0 ? '+' : ''}{fmt(stats.netto)} {stats.satuan}
-							</Badge>
-						</div>
 					</div>
 				{/if}
 			</div>
@@ -567,9 +562,8 @@
 									{fmt(stats.saldoAkhir)}
 								</TableCell>
 								<TableCell colspan={2} class="font-mono text-[11px] text-muted-foreground font-bold py-3.5">
-									<span class="text-foreground font-bold">Netto: {stats.netto >= 0 ? '+' : ''}{fmt(stats.netto)} {stats.satuan}</span>
 									{#if stats.saldoAwal > 0}
-										<span class="block text-[10px] text-muted-foreground">
+										<span class="block text-[11px] text-muted-foreground">
 											(Saldo Awal: {fmt(stats.saldoAwal)} {stats.satuan})
 										</span>
 									{/if}

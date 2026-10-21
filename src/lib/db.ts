@@ -10,6 +10,7 @@ const ENV_PATH = `.env.${process.env.NODE_ENV || "development"}`;
 import { existsSync } from "node:fs";
 dotenv.config({
   path: existsSync(ENV_PATH) ? ENV_PATH : ".env",
+  override: true,
 });
 
 // Logger terstruktur (pino)
@@ -27,11 +28,11 @@ export const isUsingBackup = (): boolean => {
   return ctx?.useBackup ?? false;
 };
 
-const config: sql.config = {
+export const getConfig = (): sql.config => ({
   user: process.env.DB_USER ?? "",
   password: process.env.DB_PASSWORD ?? "",
   server: process.env.DB_SERVER ?? "",
-  port: 1433,
+  port: parseInt(process.env.DB_PORT || "1433", 10),
   database: process.env.DB_DATABASE ?? "",
   pool: {
     max: 10,
@@ -44,16 +45,16 @@ const config: sql.config = {
     connectTimeout: 30000,
     requestTimeout: 60000,
   },
-};
+});
 
 // Pool terpisah untuk autentikasi (MenuCP) — seperti `getPoolLogin` di kiw.
 // Jika DB_DATABASE2 tidak di-set, fallback ke DB_DATABASE agar tetap jalan
 // di environment single-DB (KIW Monitoring Inventori standalone).
-const loginConfig: sql.config = {
+export const getLoginConfig = (): sql.config => ({
   user: process.env.DB_USER ?? "",
   password: process.env.DB_PASSWORD ?? "",
   server: process.env.DB_SERVER ?? "",
-  port: 1433,
+  port: parseInt(process.env.DB_PORT || "1433", 10),
   database: process.env.DB_DATABASE2 || process.env.DB_DATABASE || "",
   pool: {
     max: 5,
@@ -66,15 +67,15 @@ const loginConfig: sql.config = {
     connectTimeout: 30000,
     requestTimeout: 30000,
   },
-};
+});
 
 // ─── Backup server (tidak live) ──────────────────────────────────────────────
-const backupConfig: sql.config = {
-  user: process.env.DB_BACKUP_USER ?? "",
-  password: process.env.DB_BACKUP_PASSWORD ?? "",
-  server: process.env.DB_BACKUP_SERVER ?? "",
-  port: 1433,
-  database: process.env.DB_BACKUP_DATABASE ?? "",
+export const getBackupConfig = (): sql.config => ({
+  user: process.env.DB_BACKUP_USER || process.env.DB_USER || "",
+  password: process.env.DB_BACKUP_PASSWORD || process.env.DB_PASSWORD || "",
+  server: process.env.DB_BACKUP_SERVER || process.env.DB_SERVER || "",
+  port: parseInt(process.env.DB_PORT || "1433", 10),
+  database: process.env.DB_BACKUP_DATABASE || process.env.DB_DATABASE || "",
   pool: {
     max: 10,
     min: 0,
@@ -86,14 +87,14 @@ const backupConfig: sql.config = {
     connectTimeout: 30000,
     requestTimeout: 60000,
   },
-};
+});
 
-const backupLoginConfig: sql.config = {
-  user: process.env.DB_BACKUP_USER ?? "",
-  password: process.env.DB_BACKUP_PASSWORD ?? "",
-  server: process.env.DB_BACKUP_SERVER ?? "",
-  port: 1433,
-  database: process.env.DB_BACKUP_DATABASE2 || process.env.DB_BACKUP_DATABASE || "",
+export const getBackupLoginConfig = (): sql.config => ({
+  user: process.env.DB_BACKUP_USER || process.env.DB_USER || "",
+  password: process.env.DB_BACKUP_PASSWORD || process.env.DB_PASSWORD || "",
+  server: process.env.DB_BACKUP_SERVER || process.env.DB_SERVER || "",
+  port: parseInt(process.env.DB_PORT || "1433", 10),
+  database: process.env.DB_BACKUP_DATABASE2 || process.env.DB_BACKUP_DATABASE || process.env.DB_DATABASE2 || process.env.DB_DATABASE || "",
   pool: {
     max: 5,
     min: 0,
@@ -105,7 +106,13 @@ const backupLoginConfig: sql.config = {
     connectTimeout: 30000,
     requestTimeout: 30000,
   },
-};
+});
+
+// Compatibility aliases
+const config: sql.config = getConfig();
+const loginConfig: sql.config = getLoginConfig();
+const backupConfig: sql.config = getBackupConfig();
+const backupLoginConfig: sql.config = getBackupLoginConfig();
 
 let poolPromise: Promise<sql.ConnectionPool> | undefined;
 let poolPromiseLogin: Promise<sql.ConnectionPool> | undefined;
@@ -135,53 +142,53 @@ const createPool = async (
 };
 
 export const getPool = async (): Promise<sql.ConnectionPool> => {
-  if (!poolPromise) poolPromise = createPool(config, "default");
+  if (!poolPromise) poolPromise = createPool(getConfig(), "default");
   try {
     const pool = await poolPromise;
     await pool.request().query("SELECT 1 AS test");
     return pool;
   } catch {
     log.warn("🔄 Reconnecting to database [default]...");
-    poolPromise = createPool(config, "default");
+    poolPromise = createPool(getConfig(), "default");
     return poolPromise;
   }
 };
 
 export const getPoolLogin = async (): Promise<sql.ConnectionPool> => {
-  if (!poolPromiseLogin) poolPromiseLogin = createPool(loginConfig, "login");
+  if (!poolPromiseLogin) poolPromiseLogin = createPool(getLoginConfig(), "login");
   try {
     const pool = await poolPromiseLogin;
     await pool.request().query("SELECT 1 AS test");
     return pool;
   } catch {
     log.warn("🔄 Reconnecting to database [login]...");
-    poolPromiseLogin = createPool(loginConfig, "login");
+    poolPromiseLogin = createPool(getLoginConfig(), "login");
     return poolPromiseLogin;
   }
 };
 
 export const getPoolBackup = async (): Promise<sql.ConnectionPool> => {
-  if (!poolPromiseBackup) poolPromiseBackup = createPool(backupConfig, "backup");
+  if (!poolPromiseBackup) poolPromiseBackup = createPool(getBackupConfig(), "backup");
   try {
     const pool = await poolPromiseBackup;
     await pool.request().query("SELECT 1 AS test");
     return pool;
   } catch {
     log.warn("🔄 Reconnecting to database [backup]...");
-    poolPromiseBackup = createPool(backupConfig, "backup");
+    poolPromiseBackup = createPool(getBackupConfig(), "backup");
     return poolPromiseBackup;
   }
 };
 
 export const getPoolBackupLogin = async (): Promise<sql.ConnectionPool> => {
-  if (!poolPromiseBackupLogin) poolPromiseBackupLogin = createPool(backupLoginConfig, "backup-login");
+  if (!poolPromiseBackupLogin) poolPromiseBackupLogin = createPool(getBackupLoginConfig(), "backup-login");
   try {
     const pool = await poolPromiseBackupLogin;
     await pool.request().query("SELECT 1 AS test");
     return pool;
   } catch {
     log.warn("🔄 Reconnecting to database [backup-login]...");
-    poolPromiseBackupLogin = createPool(backupLoginConfig, "backup-login");
+    poolPromiseBackupLogin = createPool(getBackupLoginConfig(), "backup-login");
     return poolPromiseBackupLogin;
   }
 };

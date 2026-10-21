@@ -106,6 +106,7 @@
 	let itemForm = $state({
 		ItemID: '',
 		ItemName: '',
+		ItemNameLama: '',
 		KodeJenis: 'K01',
 		Mark: '',
 		SatuanKecil: 'PCS',
@@ -123,6 +124,7 @@
 		itemForm = {
 			ItemID: '',
 			ItemName: '',
+			ItemNameLama: '',
 			KodeJenis: data.referenceData?.kinds?.[0]?.KodeJenis || 'K01',
 			Mark: data.referenceData?.departments?.[0] || 'WAREHOUSE',
 			SatuanKecil: 'PCS',
@@ -142,6 +144,7 @@
 		itemForm = {
 			ItemID: String(item.ItemID || ''),
 			ItemName: String(item.ItemName || ''),
+			ItemNameLama: String(item.ItemNameLama || item.itemNameLama || ''),
 			KodeJenis: String(item.KodeJenis || 'K01'),
 			Mark: String(item.Departemen || item.Mark || ''),
 			SatuanKecil: String(item.Satuan || item.SatuanKecil || 'PCS'),
@@ -166,6 +169,7 @@
 		rowNumber: number;
 		ItemID: string;
 		ItemName: string;
+		ItemNameLama?: string;
 		KodeJenis: string;
 		namebc?: string;
 		ItemName2?: string;
@@ -397,6 +401,7 @@
 					{#each [
 						['ItemID', data.detail.ItemID, 'font-mono'],
 						['ItemName', data.detail.ItemName, ''],
+						['Nama Lama (ItemNameLama)', data.detail.ItemNameLama || data.detail.itemNameLama || '-', ''],
 						['namebc', data.detail.namebc || '-', 'font-mono text-xs'],
 						['Nama Cina (ItemName2)', data.detail.namecina || '-', ''],
 						['Warna Indo (warna)', data.detail.warna || '-', 'font-mono font-bold'],
@@ -531,6 +536,7 @@
 						</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Kode</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Nama</TableHead>
+						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Nama Lama</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">NamaBC</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Warna</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Dept</TableHead>
@@ -543,7 +549,7 @@
 				<TableBody>
 					{#if data.rows.length === 0}
 						<TableRow>
-							<TableCell colspan={10} class="h-24 text-center">
+							<TableCell colspan={11} class="h-24 text-center">
 								<div class="flex flex-col items-center gap-2 py-4">
 									<div class="bg-muted border-border flex size-12 items-center justify-center rounded-xl border-[3px] brutal-shadow-sm">
 										<Package class="size-6" />
@@ -576,6 +582,7 @@
 									</a>
 								</TableCell>
 								<TableCell class="max-w-56 truncate font-bold">{r.ItemName || '-'}</TableCell>
+								<TableCell class="max-w-56 truncate text-muted-foreground text-xs font-medium">{r.ItemNameLama || r.itemNameLama || '-'}</TableCell>
 								<TableCell class="font-mono text-xs">{r.namebc || '-'}</TableCell>
 								<TableCell>
 									<Badge variant="secondary" class="font-mono text-[10px]">{r.warna || '-'}</Badge>
@@ -696,6 +703,20 @@
 					placeholder="Contoh: Faucet Body 01S076"
 					required
 					class="h-10 border-2 font-bold"
+				/>
+			</div>
+
+			<!-- Nama Barang Lama (ItemNameLama) -->
+			<div class="space-y-1">
+				<Label for="ItemNameLama" class="font-black text-xs uppercase">
+					Nama Barang Lama (ItemNameLama)
+				</Label>
+				<Input
+					id="ItemNameLama"
+					name="ItemNameLama"
+					bind:value={itemForm.ItemNameLama}
+					placeholder="Nama barang versi lama jika ada..."
+					class="h-10 border-2 text-xs"
 				/>
 			</div>
 
@@ -948,6 +969,7 @@
 								<TableHead class="w-20">Status</TableHead>
 								<TableHead>Kode</TableHead>
 								<TableHead>Nama Barang</TableHead>
+								<TableHead>Nama Lama</TableHead>
 								<TableHead>Warna</TableHead>
 								<TableHead>Jenis</TableHead>
 								<TableHead>Departemen</TableHead>
@@ -970,6 +992,7 @@
 									</TableCell>
 									<TableCell class="font-mono font-black">{it.ItemID}</TableCell>
 									<TableCell class="font-bold max-w-44 truncate">{it.ItemName}</TableCell>
+									<TableCell class="text-muted-foreground max-w-36 truncate text-[11px]">{it.ItemNameLama || '-'}</TableCell>
 									<TableCell>
 										<span class="font-mono text-[10px] font-bold">{it.warna || '-'}</span>
 										{#if it.warnac && it.warnac !== it.warna}

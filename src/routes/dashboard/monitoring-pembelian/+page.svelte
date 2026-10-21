@@ -523,7 +523,9 @@
 																							{fmt(summary.saldoAkhir)}
 																						</TableCell>
 																						<TableCell class="font-mono text-[10px] text-muted-foreground font-bold">
-																							Netto: {summary.totalMasuk - summary.totalKeluar >= 0 ? '+' : ''}{fmt(summary.totalMasuk - summary.totalKeluar)} Kg
+																							{#if summary.saldoAwal > 0}
+																								(Saldo Awal: {fmt(summary.saldoAwal)})
+																							{/if}
 																						</TableCell>
 																					</TableRow>
 																				{/if}

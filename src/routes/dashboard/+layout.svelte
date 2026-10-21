@@ -119,7 +119,8 @@
 			items: [
 				{ href: '/dashboard/input-po', label: 'Input Purchase Order', icon: ShoppingCart },
 				{ href: '/dashboard/monitoring-pembelian', label: 'Monitoring Pembelian', icon: ShoppingCart },
-				{ href: '/dashboard/laporan-pembelian', label: 'Laporan Pembelian', icon: ArrowDownToLine }
+				{ href: '/dashboard/laporan-pembelian', label: 'Laporan Pembelian', icon: ArrowDownToLine },
+				{ href: '/dashboard/kartu-stock-pembelian', label: 'Kartu Stock Pembelian', icon: Layers }
 			]
 		},
 		{

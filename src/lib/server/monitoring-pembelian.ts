@@ -391,16 +391,28 @@ export async function getKartuStock(opts: {
   loc?: string;
 }): Promise<KartuStockItem[]> {
   const { tgl1, tgl2, itemid, loc } = opts;
-  const res = await runProcedure("dbo.rpKartuStockBrgL", [
-    { name: "Tgl1", type: sql.Date, value: tgl1 },
-    { name: "Tgl2", type: sql.Date, value: tgl2 },
-    { name: "Loc", type: sql.NVarChar, value: loc || "%" },
-    { name: "Item", type: sql.NVarChar, value: "%" },
-    { name: "PeriodeR", type: sql.NVarChar, value: "201905" },
-    { name: "kategori", type: sql.NVarChar, value: "0" },
-    { name: "itemid", type: sql.NVarChar, value: itemid },
+
+  // Ambil satuan master yang sebenarnya dari taGoods
+  const [goodsRes, res] = await Promise.all([
+    runQuery(
+      `SELECT TOP 1 
+         ISNULL(NULLIF(RTRIM(LTRIM(SatuanKecil)), ''), 'PCS') AS SatuanKecil
+       FROM [cp].[dbo].[taGoods] 
+       WHERE RTRIM(LTRIM(ItemID)) = RTRIM(LTRIM(@itemId))`,
+      [{ name: "itemId", type: sql.VarChar(50), value: itemid }]
+    ),
+    runProcedure("dbo.rpKartuStockBrgL", [
+      { name: "Tgl1", type: sql.Date, value: tgl1 },
+      { name: "Tgl2", type: sql.Date, value: tgl2 },
+      { name: "Loc", type: sql.NVarChar, value: loc || "%" },
+      { name: "Item", type: sql.NVarChar, value: "%" },
+      { name: "PeriodeR", type: sql.NVarChar, value: "201905" },
+      { name: "kategori", type: sql.NVarChar, value: "0" },
+      { name: "itemid", type: sql.NVarChar, value: itemid },
+    ]),
   ]);
 
+  const realSatuan = String(goodsRes.recordset?.[0]?.SatuanKecil || "PCS").trim();
   const raw = (res.recordset || []) as any[];
   let runningSaldo = 0;
 
@@ -421,7 +433,7 @@ export async function getKartuStock(opts: {
       NoDoc: String(r.NoDoc ?? ""),
       NoMemo: String(r.NoMemo ?? ""),
       Keterangan: String(r.Keterangan ?? ""),
-      satuan: String(r.satuan ?? "Kgs"),
+      satuan: realSatuan,
       SaldoKg: Math.round(runningSaldo * 100) / 100,
     };
   });

@@ -66,6 +66,7 @@ export const actions: Actions = {
 
 		const ItemID = String(form.get('ItemID') ?? '').trim().toUpperCase();
 		const ItemName = String(form.get('ItemName') ?? '').trim();
+		const ItemNameLama = String(form.get('ItemNameLama') ?? '').trim() || undefined;
 		const KodeJenis = String(form.get('KodeJenis') ?? '').trim().toUpperCase();
 		const namebc = String(form.get('namebc') ?? '').trim() || undefined;
 		const ItemName2 = String(form.get('ItemName2') ?? '').trim() || undefined;
@@ -89,6 +90,7 @@ export const actions: Actions = {
 		const payload: CreateMasterItemPayload = {
 			ItemID,
 			ItemName,
+			ItemNameLama,
 			namebc,
 			ItemName2,
 			KodeJenis,

@@ -143,6 +143,47 @@ export async function searchGoods(query: string, limit = 25): Promise<KartuStock
 }
 
 /**
+ * Mencari barang pembelian dari riwayat taTransIDT untuk selector kartu stock pembelian
+ */
+export async function searchPurchasedGoods(query: string, limit = 25): Promise<KartuStockItemInfo[]> {
+  const kw = (query ?? "").trim();
+  try {
+    const whereQuery = kw ? "AND (g.ItemID LIKE @q OR g.ItemName LIKE @q)" : "";
+    const params: any[] = [{ name: "Lim", type: sql.Int, value: limit }];
+    if (kw) {
+      params.push({ name: "q", type: sql.NVarChar as unknown as sql.ISqlType, value: `%${kw}%` });
+    }
+
+    const res = await runQuery(
+      `SELECT TOP (@Lim) 
+         g.ItemID, 
+         g.ItemName, 
+         ISNULL(g.SatuanKecil, 'Pcs') AS Satuan, 
+         g.KodeJenis, 
+         g.Mark AS Departemen
+       FROM [cp].[dbo].[taGoods] g
+       WHERE EXISTS (
+         SELECT 1 FROM [cp].[dbo].[taTransIDT] t WHERE t.ItemID = g.ItemID
+       )
+       ${whereQuery}
+       ORDER BY g.ItemID ASC`,
+      params
+    );
+
+    return (res.recordset || []).map((r: any) => ({
+      itemId: String(r.ItemID).trim(),
+      itemName: String(r.ItemName ?? "").trim(),
+      satuan: String(r.Satuan ?? "Pcs").trim(),
+      kodeJenis: r.KodeJenis != null ? String(r.KodeJenis).trim() : undefined,
+      departemen: r.Departemen != null ? String(r.Departemen).trim() : undefined,
+    }));
+  } catch (error) {
+    log.error({ error, query }, "Gagal mencari barang pembelian dari taTransIDT");
+    return [];
+  }
+}
+
+/**
  * Mengambil informasi detail item dari taGoods
  */
 export async function getItemInfo(itemId: string): Promise<KartuStockItemInfo | null> {
@@ -261,6 +302,7 @@ export async function getKartuStockReport(opts: {
     }
 
     const { label: kegiatanLabel, tone: kegiatanTone } = formatKegiatan(kegiatanRaw);
+    const resolvedSatuan = String(itemInfo?.satuan || r.satuan || "Pcs").trim();
 
     rows.push({
       rowNum: i + 1,
@@ -280,7 +322,7 @@ export async function getKartuStockReport(opts: {
       noDoc: String(r.NoDoc ?? "").trim(),
       noMemo: String(r.NoMemo ?? "").trim(),
       keterangan: String(r.Keterangan ?? "").trim(),
-      satuan: String(r.satuan ?? itemInfo?.satuan ?? "Kgs").trim(),
+      satuan: resolvedSatuan,
       locId: String(r.locid ?? "").trim(),
     });
   }
@@ -317,6 +359,8 @@ export function exportKartuStockToExcel(
 ): { buffer: Buffer; fileName: string } {
   const wb = XLSX.utils.book_new();
 
+  const unitLabel = report.itemInfo?.satuan || "Pcs";
+
   const titleRows = [
     ["LAPORAN KARTU STOCK BARANG"],
     [`Periode: ${meta.tgl1} s/d ${meta.tgl2}`],
@@ -324,15 +368,15 @@ export function exportKartuStockToExcel(
     [
       `Barang: ${report.itemInfo?.itemId || "-"} - ${
         report.itemInfo?.itemName || ""
-      } (${report.itemInfo?.satuan || "Kgs"})`,
+      } (${unitLabel})`,
     ],
     [], // Blank row
     [
       "Ringkasan:",
-      `Saldo Awal: ${report.summary.saldoAwalKg.toLocaleString("id-ID")} ${report.itemInfo?.satuan || "Kg"} (${report.summary.saldoAwalZak} Zak)`,
-      `Total Masuk: ${report.summary.totalMasukKg.toLocaleString("id-ID")} ${report.itemInfo?.satuan || "Kg"} (${report.summary.totalMasukZak} Zak)`,
-      `Total Keluar: ${report.summary.totalKeluarKg.toLocaleString("id-ID")} ${report.itemInfo?.satuan || "Kg"} (${report.summary.totalKeluarZak} Zak)`,
-      `Saldo Akhir: ${report.summary.saldoAkhirKg.toLocaleString("id-ID")} ${report.itemInfo?.satuan || "Kg"} (${report.summary.saldoAkhirZak} Zak)`,
+      `Saldo Awal: ${report.summary.saldoAwalKg.toLocaleString("id-ID")} ${unitLabel} (${report.summary.saldoAwalZak} Zak)`,
+      `Total Masuk: ${report.summary.totalMasukKg.toLocaleString("id-ID")} ${unitLabel} (${report.summary.totalMasukZak} Zak)`,
+      `Total Keluar: ${report.summary.totalKeluarKg.toLocaleString("id-ID")} ${unitLabel} (${report.summary.totalKeluarZak} Zak)`,
+      `Saldo Akhir: ${report.summary.saldoAkhirKg.toLocaleString("id-ID")} ${unitLabel} (${report.summary.saldoAkhirZak} Zak)`,
     ],
     [], // Blank row
   ];
@@ -346,11 +390,11 @@ export function exportKartuStockToExcel(
     "No. Memo / Bukti",
     "Keterangan",
     "Masuk (Zak)",
-    "Masuk (Kg/Qty)",
+    `Masuk (${unitLabel})`,
     "Keluar (Zak)",
-    "Keluar (Kg/Qty)",
+    `Keluar (${unitLabel})`,
     "Saldo (Zak)",
-    "Saldo (Kg/Qty)",
+    `Saldo (${unitLabel})`,
     "Satuan",
   ];
 
@@ -385,7 +429,7 @@ export function exportKartuStockToExcel(
     report.summary.totalKeluarKg,
     report.summary.saldoAkhirZak,
     report.summary.saldoAkhirKg,
-    report.itemInfo?.satuan || "Kgs",
+    unitLabel,
   ];
 
   const sheetData = [...titleRows, tableHeaders, ...dataRows, totalRow];
@@ -414,6 +458,322 @@ export function exportKartuStockToExcel(
   const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
   const safeItemId = (report.itemInfo?.itemId || "ALL").replace(/[^a-zA-Z0-9_-]/g, "_");
   const fileName = `Kartu_Stock_${safeItemId}_${meta.tgl1}_sd_${meta.tgl2}.xlsx`;
+
+  return { buffer, fileName };
+}
+
+export interface RekapMutasiPembelianRow {
+  rowNum: number;
+  itemId: string;
+  itemName: string;
+  satuan: string;
+  kodeJenis?: string;
+  departemen?: string;
+  saldoAwalZak: number;
+  saldoAwalKg: number;
+  masukZak: number;
+  masukKg: number;
+  keluarZak: number;
+  keluarKg: number;
+  saldoAkhirZak: number;
+  saldoAkhirKg: number;
+}
+
+export interface RekapMutasiPembelianSummary {
+  totalSaldoAwalZak: number;
+  totalSaldoAwalKg: number;
+  totalMasukZak: number;
+  totalMasukKg: number;
+  totalKeluarZak: number;
+  totalKeluarKg: number;
+  totalSaldoAkhirZak: number;
+  totalSaldoAkhirKg: number;
+  totalItems: number;
+}
+
+export interface RekapMutasiPembelianResult {
+  rows: RekapMutasiPembelianRow[];
+  summary: RekapMutasiPembelianSummary;
+  totalRows: number;
+}
+
+/**
+ * Mencari periode closing taACR terdekat yang valid (memiliki data saldo closing)
+ */
+export async function getBestClosingPeriode(tgl1Str: string): Promise<string> {
+  const clean = tgl1Str.replace(/[^0-9]/g, "").slice(0, 6) || "202602";
+  try {
+    const res = await runQuery(
+      `SELECT TOP 1 Periode 
+       FROM [cp].[dbo].[taACR] 
+       WHERE Periode <= @p 
+       GROUP BY Periode 
+       HAVING COUNT(*) > 500 
+       ORDER BY Periode DESC`,
+      [{ name: "p", type: sql.VarChar(6), value: clean }]
+    );
+    if (res.recordset && res.recordset.length > 0 && res.recordset[0].Periode) {
+      return String(res.recordset[0].Periode).trim();
+    }
+  } catch (err) {
+    log.warn({ err }, "Gagal mengambil best closing periode, fallback ke 202602");
+  }
+  return "202602";
+}
+
+/**
+ * Mengambil rekapitulasi mutasi stok semua barang pembelian dari riwayat taTransIDT
+ * menggunakan stored procedure dbo.rpMutasiStockBrgL
+ */
+export async function getRekapMutasiPembelian(opts: {
+  tgl1: string;
+  tgl2: string;
+  loc?: string;
+  periodeR?: string;
+  hideZero?: boolean;
+  search?: string;
+}): Promise<RekapMutasiPembelianResult> {
+  const cleanLoc = (opts.loc ?? "").trim() || "%";
+  const cleanPeriodeR =
+    (opts.periodeR ?? "").trim() || (await getBestClosingPeriode(opts.tgl1));
+  const hideZero = opts.hideZero !== false;
+  const searchKw = (opts.search ?? "").trim().toLowerCase();
+
+  const d1 = new Date(opts.tgl1);
+  const d2 = new Date(opts.tgl2);
+  d2.setHours(23, 59, 59, 999);
+
+  try {
+    const [transItemsRes, goodsRes, procRes] = await Promise.all([
+      runQuery(
+        `SELECT DISTINCT LTRIM(RTRIM(ItemID)) AS ItemID 
+         FROM [cp].[dbo].[taTransIDT] 
+         WHERE ItemID IS NOT NULL AND ItemID <> ''`
+      ),
+      runQuery(
+        `SELECT 
+           LTRIM(RTRIM(ItemID)) AS ItemID, 
+           ItemName, 
+           ISNULL(SatuanKecil, 'Pcs') AS Satuan, 
+           KodeJenis, 
+           Mark AS Departemen 
+         FROM [cp].[dbo].[taGoods]`
+      ),
+      runProcedure("dbo.rpMutasiStockBrgL", [
+        { name: "Tgl1", type: sql.DateTime, value: d1 },
+        { name: "Tgl2", type: sql.DateTime, value: d2 },
+        { name: "Loc", type: sql.VarChar(6), value: cleanLoc },
+        { name: "Item", type: sql.VarChar(14), value: "%" },
+        { name: "PeriodeR", type: sql.VarChar(6), value: cleanPeriodeR },
+        { name: "company", type: sql.Int, value: 1 },
+      ]),
+    ]);
+
+    const transSet = new Set(
+      (transItemsRes.recordset || []).map((r: any) => String(r.ItemID || "").trim())
+    );
+
+    const goodsMap = new Map<string, any>();
+    for (const g of goodsRes.recordset || []) {
+      goodsMap.set(String(g.ItemID || "").trim(), g);
+    }
+
+    const rawRows = (procRes.recordset || []) as any[];
+    const rows: RekapMutasiPembelianRow[] = [];
+
+    let totalSaldoAwalZak = 0;
+    let totalSaldoAwalKg = 0;
+    let totalMasukZak = 0;
+    let totalMasukKg = 0;
+    let totalKeluarZak = 0;
+    let totalKeluarKg = 0;
+    let totalSaldoAkhirZak = 0;
+    let totalSaldoAkhirKg = 0;
+
+    let rowNum = 1;
+    for (const r of rawRows) {
+      const itemId = String(r.ItemID || "").trim();
+      if (!itemId || !transSet.has(itemId)) continue;
+
+      const saZak = Number(r.SaBags) || 0;
+      const saKg = Number(r.SaKgs) || 0;
+      const inZak = Number(r.ZakI) || 0;
+      const inKg = Number(r.KgI) || 0;
+      const outZak = Number(r.ZakO) || 0;
+      const outKg = Number(r.KgO) || 0;
+
+      // Sembunyikan item jika saldo dan pergerakan semuanya 0
+      if (
+        hideZero &&
+        saZak === 0 &&
+        saKg === 0 &&
+        inZak === 0 &&
+        inKg === 0 &&
+        outZak === 0 &&
+        outKg === 0
+      ) {
+        continue;
+      }
+
+      const gInfo = goodsMap.get(itemId);
+      const itemName = String(r.itemName || gInfo?.ItemName || "").trim();
+
+      // Search keyword filter
+      if (searchKw) {
+        const matchItem = itemId.toLowerCase().includes(searchKw);
+        const matchName = itemName.toLowerCase().includes(searchKw);
+        if (!matchItem && !matchName) continue;
+      }
+
+      const saldoAkhirZak = Math.round((saZak + inZak - outZak) * 100) / 100;
+      const saldoAkhirKg = Math.round((saKg + inKg - outKg) * 100) / 100;
+
+      totalSaldoAwalZak += saZak;
+      totalSaldoAwalKg += saKg;
+      totalMasukZak += inZak;
+      totalMasukKg += inKg;
+      totalKeluarZak += outZak;
+      totalKeluarKg += outKg;
+      totalSaldoAkhirZak += saldoAkhirZak;
+      totalSaldoAkhirKg += saldoAkhirKg;
+
+      rows.push({
+        rowNum: rowNum++,
+        itemId,
+        itemName,
+        satuan: String(gInfo?.Satuan || "Pcs").trim(),
+        kodeJenis: gInfo?.KodeJenis != null ? String(gInfo.KodeJenis).trim() : undefined,
+        departemen: gInfo?.Departemen != null ? String(gInfo.Departemen).trim() : undefined,
+        saldoAwalZak: Math.round(saZak * 100) / 100,
+        saldoAwalKg: Math.round(saKg * 100) / 100,
+        masukZak: Math.round(inZak * 100) / 100,
+        masukKg: Math.round(inKg * 100) / 100,
+        keluarZak: Math.round(outZak * 100) / 100,
+        keluarKg: Math.round(outKg * 100) / 100,
+        saldoAkhirZak,
+        saldoAkhirKg,
+      });
+    }
+
+    const summary: RekapMutasiPembelianSummary = {
+      totalSaldoAwalZak: Math.round(totalSaldoAwalZak * 100) / 100,
+      totalSaldoAwalKg: Math.round(totalSaldoAwalKg * 100) / 100,
+      totalMasukZak: Math.round(totalMasukZak * 100) / 100,
+      totalMasukKg: Math.round(totalMasukKg * 100) / 100,
+      totalKeluarZak: Math.round(totalKeluarZak * 100) / 100,
+      totalKeluarKg: Math.round(totalKeluarKg * 100) / 100,
+      totalSaldoAkhirZak: Math.round(totalSaldoAkhirZak * 100) / 100,
+      totalSaldoAkhirKg: Math.round(totalSaldoAkhirKg * 100) / 100,
+      totalItems: rows.length,
+    };
+
+    return {
+      rows,
+      summary,
+      totalRows: rows.length,
+    };
+  } catch (error) {
+    log.error({ error, opts }, "Gagal mengambil rekap mutasi pembelian");
+    throw error;
+  }
+}
+
+/**
+ * Mengekspor data rekapitulasi mutasi stok barang pembelian ke file Excel (.xlsx)
+ */
+export function exportRekapMutasiPembelianToExcel(
+  report: RekapMutasiPembelianResult,
+  meta: {
+    tgl1: string;
+    tgl2: string;
+    locName?: string;
+  }
+): { buffer: Buffer; fileName: string } {
+  const wb = XLSX.utils.book_new();
+
+  const titleRows = [
+    ["LAPORAN REKAPITULASI MUTASI STOK SEMUA BARANG PEMBELIAN (taTransIDT)"],
+    [`Periode: ${meta.tgl1} s/d ${meta.tgl2}`],
+    [`Gudang: ${meta.locName || "Semua Gudang"}`],
+    [`Total Jenis Barang: ${report.summary.totalItems.toLocaleString("id-ID")}`],
+    [],
+    [
+      "Ringkasan Total:",
+      `Saldo Awal: ${report.summary.totalSaldoAwalKg.toLocaleString("id-ID")} Qty (${report.summary.totalSaldoAwalZak.toLocaleString("id-ID")} Zak)`,
+      `Total Masuk: ${report.summary.totalMasukKg.toLocaleString("id-ID")} Qty (${report.summary.totalMasukZak.toLocaleString("id-ID")} Zak)`,
+      `Total Keluar: ${report.summary.totalKeluarKg.toLocaleString("id-ID")} Qty (${report.summary.totalKeluarZak.toLocaleString("id-ID")} Zak)`,
+      `Saldo Akhir: ${report.summary.totalSaldoAkhirKg.toLocaleString("id-ID")} Qty (${report.summary.totalSaldoAkhirZak.toLocaleString("id-ID")} Zak)`,
+    ],
+    [],
+  ];
+
+  const tableHeaders = [
+    "No",
+    "Kode Barang",
+    "Nama Barang",
+    "Satuan",
+    "Saldo Awal (Zak)",
+    "Saldo Awal (Qty)",
+    "Masuk (Zak)",
+    "Masuk (Qty)",
+    "Keluar (Zak)",
+    "Keluar (Qty)",
+    "Saldo Akhir (Zak)",
+    "Saldo Akhir (Qty)",
+  ];
+
+  const dataRows = report.rows.map((r) => [
+    r.rowNum,
+    r.itemId,
+    r.itemName,
+    r.satuan,
+    r.saldoAwalZak,
+    r.saldoAwalKg,
+    r.masukZak,
+    r.masukKg,
+    r.keluarZak,
+    r.keluarKg,
+    r.saldoAkhirZak,
+    r.saldoAkhirKg,
+  ]);
+
+  const totalRow = [
+    "",
+    "TOTAL KESELURUHAN",
+    "",
+    "",
+    report.summary.totalSaldoAwalZak,
+    report.summary.totalSaldoAwalKg,
+    report.summary.totalMasukZak,
+    report.summary.totalMasukKg,
+    report.summary.totalKeluarZak,
+    report.summary.totalKeluarKg,
+    report.summary.totalSaldoAkhirZak,
+    report.summary.totalSaldoAkhirKg,
+  ];
+
+  const sheetData = [...titleRows, tableHeaders, ...dataRows, totalRow];
+  const ws = XLSX.utils.aoa_to_sheet(sheetData);
+
+  ws["!cols"] = [
+    { wch: 6 },  // No
+    { wch: 18 }, // Kode Barang
+    { wch: 35 }, // Nama Barang
+    { wch: 10 }, // Satuan
+    { wch: 16 }, // Saldo Awal Zak
+    { wch: 18 }, // Saldo Awal Kg
+    { wch: 14 }, // Masuk Zak
+    { wch: 16 }, // Masuk Kg
+    { wch: 14 }, // Keluar Zak
+    { wch: 16 }, // Keluar Kg
+    { wch: 16 }, // Saldo Akhir Zak
+    { wch: 18 }, // Saldo Akhir Kg
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, "Rekap Mutasi");
+
+  const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  const fileName = `Rekap_Mutasi_Pembelian_${meta.tgl1}_sd_${meta.tgl2}.xlsx`;
 
   return { buffer, fileName };
 }
