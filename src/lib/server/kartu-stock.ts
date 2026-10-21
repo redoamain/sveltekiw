@@ -534,8 +534,7 @@ export async function getRekapMutasiPembelian(opts: {
   search?: string;
 }): Promise<RekapMutasiPembelianResult> {
   const cleanLoc = (opts.loc ?? "").trim() || "%";
-  const cleanPeriodeR =
-    (opts.periodeR ?? "").trim() || (await getBestClosingPeriode(opts.tgl1));
+  const cleanPeriodeR = (opts.periodeR ?? "").trim() || "201905";
   const hideZero = opts.hideZero !== false;
   const searchKw = (opts.search ?? "").trim().toLowerCase();
 
