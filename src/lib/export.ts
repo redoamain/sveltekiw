@@ -2123,7 +2123,7 @@ export async function exportMasterGoodsToExcel(
   const headers = [
     "ItemID",
     "ItemName",
-    "Nama Lama",
+    "Kode Item Lama",
     "namebc",
     "Nama Cina",
     "Warna Indo",
@@ -2164,7 +2164,7 @@ export async function exportMasterGoodsToExcel(
   ws["!cols"] = [
     { wch: 16 }, // ItemID
     { wch: 32 }, // ItemName
-    { wch: 28 }, // Nama Lama
+    { wch: 28 }, // Kode Item Lama
     { wch: 16 }, // namebc
     { wch: 24 }, // namecina
     { wch: 16 }, // warna
@@ -2192,7 +2192,7 @@ export async function exportMasterGoodsToExcel(
     ["Kolom", "Sumber", "Keterangan"],
     ["ItemID", "taGoods.ItemID", "Kode barang unik"],
     ["ItemName", "taGoods.ItemName", "Nama barang"],
-    ["Nama Lama", "taGoods.ItemNameLama", "Nama barang lama / alternatif"],
+    ["Kode Item Lama", "taGoods.ItemNameLama", "Kode item barang lama / alternatif"],
     ["namebc", "taGoods.namebc", "Nama BC"],
     ["Nama Cina", "taGoods.ItemName2", "Nama Cina"],
     ["Warna Indo", "taGoods.warna", "Warna Indonesia"],

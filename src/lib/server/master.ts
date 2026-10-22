@@ -578,7 +578,7 @@ export async function generateMasterGoodsExcelTemplate(): Promise<Buffer> {
     [
       "Kode Barang (ItemID) *",
       "Nama Barang (ItemName) *",
-      "Nama Barang Lama (ItemNameLama)",
+      "Kode Item Lama (ItemNameLama)",
       "Kode Jenis *",
       "Nama Bea Cukai (namebc)",
       "Nama Mandarin (ItemName2)",
@@ -592,7 +592,7 @@ export async function generateMasterGoodsExcelTemplate(): Promise<Buffer> {
     [
       "CONTOH-BB-001",
       "BIJI PLASTIK PP HITAM",
-      "PP BLACK OLD",
+      "BB-LAMA-001",
       "K01",
       "BIJI PLASTIK PP",
       "PP 塑料颗粒 黑色",
@@ -606,7 +606,7 @@ export async function generateMasterGoodsExcelTemplate(): Promise<Buffer> {
     [
       "CONTOH-FG-001",
       "BODY KRAN AIR CHROME",
-      "BODY KRAN LAMA CHROME",
+      "FG-LAMA-001",
       "K02",
       "FAUCET BODY",
       "龙头主体 镀铬",
@@ -724,9 +724,9 @@ export async function parseMasterGoodsExcelImport(buffer: Buffer): Promise<Parse
   }
 
   const colMap = {
-    itemId: header.findIndex(h => h.includes("itemid") || h.includes("kode barang") || h.includes("kode")),
+    itemId: header.findIndex(h => (h.includes("itemid") || h.includes("kode barang") || h.includes("kode")) && !h.includes("lama") && !h.includes("jenis")),
     itemName: header.findIndex(h => (h.includes("itemname") || h.includes("nama barang")) && !h.includes("lama")),
-    itemNameLama: header.findIndex(h => h.includes("itemnamelama") || h.includes("nama lama") || h.includes("barang lama")),
+    itemNameLama: header.findIndex(h => h.includes("itemnamelama") || h.includes("kode item lama") || h.includes("kode lama") || h.includes("nama lama") || h.includes("barang lama")),
     kodeJenis: header.findIndex(h => h.includes("kode jenis") || h.includes("jenis")),
     namebc: header.findIndex(h => h.includes("namebc") || h.includes("bea cukai") || h.includes("bc")),
     itemName2: header.findIndex(h => h.includes("itemname2") || h.includes("mandarin") || h.includes("cina")),

@@ -401,7 +401,7 @@
 					{#each [
 						['ItemID', data.detail.ItemID, 'font-mono'],
 						['ItemName', data.detail.ItemName, ''],
-						['Nama Lama (ItemNameLama)', data.detail.ItemNameLama || data.detail.itemNameLama || '-', ''],
+						['Kode Item Lama (ItemNameLama)', data.detail.ItemNameLama || data.detail.itemNameLama || '-', ''],
 						['namebc', data.detail.namebc || '-', 'font-mono text-xs'],
 						['Nama Cina (ItemName2)', data.detail.namecina || '-', ''],
 						['Warna Indo (warna)', data.detail.warna || '-', 'font-mono font-bold'],
@@ -536,7 +536,7 @@
 						</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Kode</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Nama</TableHead>
-						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Nama Lama</TableHead>
+						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Kode Item Lama</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">NamaBC</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Warna</TableHead>
 						<TableHead class="font-mono text-[11px] font-black uppercase tracking-widest">Dept</TableHead>
@@ -706,16 +706,16 @@
 				/>
 			</div>
 
-			<!-- Nama Barang Lama (ItemNameLama) -->
+			<!-- Kode Item Lama (ItemNameLama) -->
 			<div class="space-y-1">
 				<Label for="ItemNameLama" class="font-black text-xs uppercase">
-					Nama Barang Lama (ItemNameLama)
+					Kode Item Lama (ItemNameLama)
 				</Label>
 				<Input
 					id="ItemNameLama"
 					name="ItemNameLama"
 					bind:value={itemForm.ItemNameLama}
-					placeholder="Nama barang versi lama jika ada..."
+					placeholder="Kode item versi lama jika ada..."
 					class="h-10 border-2 text-xs"
 				/>
 			</div>
@@ -969,7 +969,7 @@
 								<TableHead class="w-20">Status</TableHead>
 								<TableHead>Kode</TableHead>
 								<TableHead>Nama Barang</TableHead>
-								<TableHead>Nama Lama</TableHead>
+								<TableHead>Kode Item Lama</TableHead>
 								<TableHead>Warna</TableHead>
 								<TableHead>Jenis</TableHead>
 								<TableHead>Departemen</TableHead>
