@@ -97,6 +97,7 @@ export async function getPurchaseOrderInitialData() {
 			`SELECT TOP 100 
 				ItemID, 
 				ItemName, 
+				ItemName2,
 				ISNULL(SatuanKecil, 'Pcs') AS SatuanKecil
 			 FROM [cp].[dbo].[taGoods]
 			 WHERE ItemID IS NOT NULL AND LTRIM(RTRIM(ItemID)) <> ''
@@ -132,7 +133,8 @@ export async function getPurchaseOrderInitialData() {
 		})),
 		commonGoods: goodsRes.recordset.map((r: any) => ({
 			itemId: String(r.ItemID),
-			itemName: String(r.ItemName || r.ItemID),
+			itemName: String(r.ItemName || r.ItemID).trim(),
+			itemName2: r.ItemName2 ? String(r.ItemName2).trim() : null,
 			satuan: String(r.SatuanKecil || 'Pcs')
 		}))
 	};
@@ -183,25 +185,26 @@ export async function searchGoods(keyword: string, limit = 25) {
 	const kw = keyword.trim();
 	const query = kw
 		? `SELECT TOP (@limit) 
-				ItemID, ItemName, ISNULL(SatuanKecil, 'Pcs') AS SatuanKecil
+				ItemID, ItemName, ItemName2, ISNULL(SatuanKecil, 'Pcs') AS SatuanKecil
 		   FROM [cp].[dbo].[taGoods]
 		   WHERE ItemID IS NOT NULL 
-		     AND (ItemID LIKE @kw OR ItemName LIKE @kw)
+		     AND (ItemID LIKE @kw OR ItemName LIKE @kw OR ItemName2 LIKE @kw)
 		   ORDER BY ItemID ASC`
 		: `SELECT TOP (@limit) 
-				ItemID, ItemName, ISNULL(SatuanKecil, 'Pcs') AS SatuanKecil
+				ItemID, ItemName, ItemName2, ISNULL(SatuanKecil, 'Pcs') AS SatuanKecil
 		   FROM [cp].[dbo].[taGoods]
 		   WHERE ItemID IS NOT NULL
 		   ORDER BY ItemID ASC`;
 
 	const res = await runQuery(query, [
 		{ name: 'limit', type: sql.Int, value: limit },
-		...(kw ? [{ name: 'kw', type: sql.VarChar(100), value: `%${kw}%` }] : [])
+		...(kw ? [{ name: 'kw', type: sql.NVarChar(100), value: `%${kw}%` }] : [])
 	]);
 
 	return res.recordset.map((r: any) => ({
 		itemId: String(r.ItemID),
-		itemName: String(r.ItemName || r.ItemID),
+		itemName: String(r.ItemName || r.ItemID).trim(),
+		itemName2: r.ItemName2 ? String(r.ItemName2).trim() : null,
 		satuan: String(r.SatuanKecil || 'Pcs')
 	}));
 }
@@ -352,7 +355,7 @@ export async function getPurchaseOrders(filter: PurchaseOrderFilter = {}) {
 			totalKgsL,
 			totalReceivedKgs,
 			isLocked,
-			terbilang: terbilang(total)
+			terbilang: terbilang(total, String(r.Curr || 'IDR'))
 		};
 	});
 
@@ -393,6 +396,7 @@ export async function getPurchaseOrderDetail(orderId: string): Promise<{
 			ISNULL(s.Email, '') AS SupplierEmail,
 			po.Total, po.Tax, po.Curr, po.Rate, po.TotalRp, po.Completed, po.Canceled,
 			po.CancelReason, po.Printed, po.Remark, po.TipeDok, po.tipefaktur, po.DPP,
+			po.PPRRef, po.BiayaJasaImport,
 			(SELECT COUNT(*) FROM [cp].[dbo].[taPODt] dt WHERE dt.OrderID = po.OrderID) AS ItemCount,
 			(SELECT ISNULL(SUM(dt.Kgs), 0) FROM [cp].[dbo].[taPODt] dt WHERE dt.OrderID = po.OrderID) AS TotalKgs,
 			(SELECT ISNULL(SUM(dt.KgsL), 0) FROM [cp].[dbo].[taPODt] dt WHERE dt.OrderID = po.OrderID) AS TotalKgsL
@@ -412,7 +416,8 @@ export async function getPurchaseOrderDetail(orderId: string): Promise<{
 	const dpp = Number(r.DPP) || Number(r.Total) || 0;
 	const tax = Number(r.Tax) || 0;
 	const taxAmount = Math.round((dpp * tax) / 100);
-	const total = Number(r.Total) || dpp + taxAmount;
+	const addCost = Number(r.BiayaJasaImport) || 0;
+	const total = Number(r.Total) || dpp + taxAmount + addCost;
 	const totalKgs = Number(r.TotalKgs) || 0;
 	const totalKgsL = Number(r.TotalKgsL) || 0;
 	const totalReceivedKgs = Math.max(0, totalKgs - totalKgsL);
@@ -427,6 +432,7 @@ export async function getPurchaseOrderDetail(orderId: string): Promise<{
 		dueDate: r.DueDate ? new Date(r.DueDate).toISOString().slice(0, 10) : null,
 		deliveryDate: r.DeliveryDate ? new Date(r.DeliveryDate).toISOString().slice(0, 10) : null,
 		contractNo: r.ContractNo ? String(r.ContractNo) : null,
+		refSpp: r.PPRRef ? String(r.PPRRef) : null,
 		companyId: String(r.CompanyID),
 		supplierName: String(r.SupplierName),
 		supplierAddress: String(r.SupplierAddress || ''),
@@ -435,6 +441,7 @@ export async function getPurchaseOrderDetail(orderId: string): Promise<{
 		supplierTaxId: String(r.SupplierTaxId || ''),
 		supplierEmail: String(r.SupplierEmail || ''),
 		total,
+		addCost,
 		tax,
 		taxAmount,
 		dpp,
@@ -453,7 +460,7 @@ export async function getPurchaseOrderDetail(orderId: string): Promise<{
 		totalKgsL,
 		totalReceivedKgs,
 		isLocked,
-		terbilang: terbilang(total)
+		terbilang: terbilang(total, String(r.Curr || 'IDR'))
 	};
 
 	// 2. Ambil Items taPODt
@@ -461,6 +468,8 @@ export async function getPurchaseOrderDetail(orderId: string): Promise<{
 		`SELECT 
 			dt.RJN, dt.OrderID, dt.OrderType, dt.OrderDate, dt.ItemID,
 			ISNULL(g.ItemName, dt.ItemID) AS ItemName,
+			g.ItemName2,
+			g.Spec,
 			dt.Bags, dt.Kgs, dt.KgsL, dt.Price, dt.Total, dt.recno,
 			dt.UserName, dt.UserDateTime, dt.BagMarking, dt.OGReason,
 			dt.MaxETA, ISNULL(dt.Satuan, ISNULL(g.SatuanKecil, 'Pcs')) AS Satuan
@@ -476,6 +485,12 @@ export async function getPurchaseOrderDetail(orderId: string): Promise<{
 		const kgsL = Number(item.KgsL) || 0;
 		const qtyReceived = Math.max(0, kgs - kgsL);
 		const receivedPercent = kgs > 0 ? Math.round((qtyReceived / kgs) * 100) : 0;
+		const spec = item.Spec && String(item.Spec).trim() !== 'nan' ? String(item.Spec).trim() : null;
+
+		const rawItemName = String(item.ItemName || item.ItemID).trim();
+		const rawItemName2 = item.ItemName2 ? String(item.ItemName2).trim() : null;
+		const itemName = rawItemName;
+		const itemName2 = rawItemName2;
 
 		return {
 			rjn: Number(item.RJN),
@@ -483,7 +498,9 @@ export async function getPurchaseOrderDetail(orderId: string): Promise<{
 			orderType: String(item.OrderType || 'P'),
 			orderDate: item.OrderDate ? new Date(item.OrderDate).toISOString().slice(0, 10) : header.orderDate,
 			itemId: String(item.ItemID),
-			itemName: String(item.ItemName || item.ItemID),
+			itemName,
+			itemName2,
+			spec,
 			bags: Number(item.Bags) || 1,
 			kgs,
 			kgsL,

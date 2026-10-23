@@ -2,6 +2,8 @@ export interface PurchaseOrderItemInput {
 	rjn?: number;
 	itemId: string;
 	itemName?: string;
+	itemName2?: string | null;
+	spec?: string | null;
 	bags?: number;
 	kgs: number; // Kuantitas order
 	satuan?: string;
@@ -32,6 +34,7 @@ export interface PurchaseOrderHeader {
 	dueDate: string | null;
 	deliveryDate: string | null;
 	contractNo: string | null;
+	refSpp?: string | null;
 	companyId: string;
 	supplierName: string;
 	supplierAddress: string;
@@ -40,6 +43,7 @@ export interface PurchaseOrderHeader {
 	supplierTaxId: string;
 	supplierEmail: string;
 	total: number;
+	addCost?: number;
 	tax: number; // Persentase PPN (misal 11)
 	taxAmount: number; // Nominal PPN
 	dpp: number; // Subtotal DPP

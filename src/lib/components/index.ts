@@ -26,6 +26,7 @@ export { default as ItemCombobox } from './ItemCombobox.svelte';
 export type { ItemOption } from './ItemCombobox.svelte';
 export { default as ErrorDisplay } from './ErrorDisplay.svelte';
 export { default as KopSuratCitiPlumb } from './KopSuratCitiPlumb.svelte';
+export { default as PurchaseOrderDocument } from './PurchaseOrderDocument.svelte';
 
 // Notification & Toast System
 export { default as Toaster } from './Toaster.svelte';

@@ -32,7 +32,7 @@
 		Copy
 	} from '@lucide/svelte';
 	import { toast } from '$lib/toast.svelte';
-	import { KopSuratCitiPlumb } from '$lib/components';
+	import { PurchaseOrderDocument } from '$lib/components';
 	import type { PurchaseOrderItemInput, PurchaseOrderHeader } from '$lib/types/purchase-order';
 	import { terbilang } from '$lib/terbilang';
 
@@ -137,7 +137,7 @@
 	});
 
 	let liveTerbilang = $derived.by(() => {
-		return terbilang(grandTotal);
+		return terbilang(grandTotal, currInput);
 	});
 
 	// Selected supplier object
@@ -150,7 +150,10 @@
 		const q = goodsSearchQuery.trim().toLowerCase();
 		if (!q) return data.initialData.commonGoods;
 		return data.initialData.commonGoods.filter(
-			(g) => g.itemId.toLowerCase().includes(q) || g.itemName.toLowerCase().includes(q)
+			(g: any) =>
+				g.itemId.toLowerCase().includes(q) ||
+				g.itemName.toLowerCase().includes(q) ||
+				(g.itemName2 && g.itemName2.toLowerCase().includes(q))
 		);
 	});
 
@@ -183,10 +186,11 @@
 		goodsPickerOpen = true;
 	}
 
-	function selectGoodsForActiveRow(goods: { itemId: string; itemName: string; satuan: string }) {
+	function selectGoodsForActiveRow(goods: { itemId: string; itemName: string; itemName2?: string | null; satuan: string }) {
 		if (activeRowIndexForPicker !== null && lineItems[activeRowIndexForPicker]) {
 			lineItems[activeRowIndexForPicker].itemId = goods.itemId;
 			lineItems[activeRowIndexForPicker].itemName = goods.itemName;
+			lineItems[activeRowIndexForPicker].itemName2 = goods.itemName2;
 			lineItems[activeRowIndexForPicker].satuan = goods.satuan || 'PCS';
 		}
 		goodsPickerOpen = false;
@@ -1235,134 +1239,16 @@
 				</div>
 			</div>
 
-			<!-- Modal Body (The Formatted Document) -->
-			<div class="p-6 sm:p-8 overflow-y-auto space-y-4">
+			<!-- Modal Body (The Formatted Document matching printPO.pdf) -->
+			<div class="p-4 sm:p-6 overflow-y-auto bg-slate-50">
 				{#if previewLoading}
 					<div class="p-12 text-center">
 						<div class="size-8 border-4 border-black border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
 						<p class="font-mono font-bold text-xs uppercase">Memuat Dokumen PO PT. CITI PLUMB...</p>
 					</div>
 				{:else if previewPoData}
-					<!-- 1. Kop Surat Resmi PT. CITI PLUMB -->
-					<KopSuratCitiPlumb
-						documentTitle="PURCHASE ORDER (SURAT PESANAN PEMBELIAN)"
-						documentNumber={previewPoData.header.orderId}
-						documentDate={previewPoData.header.orderDate}
-					/>
-
-					<!-- 2. Grid Info Vendor & Pengiriman -->
-					<div class="grid grid-cols-2 gap-4 text-xs my-3">
-						<div class="border-2 border-black p-3 rounded bg-neutral-50/70">
-							<span class="text-[10px] font-mono font-black uppercase text-neutral-500 block mb-1">
-								KEPADA / PEMASOK:
-							</span>
-							<h4 class="font-black text-sm text-black uppercase">{previewPoData.header.supplierName}</h4>
-							<p class="text-neutral-700 leading-tight mt-0.5">{previewPoData.header.supplierAddress || '-'}</p>
-							<p class="text-neutral-700 mt-0.5">Kota: {previewPoData.header.supplierCity || '-'}</p>
-							<div class="mt-2 pt-2 border-t border-dashed border-neutral-300 text-[11px]">
-								<div>Telp: {previewPoData.header.supplierPhone || '-'}</div>
-								<div>NPWP: {previewPoData.header.supplierTaxId || '-'}</div>
-							</div>
-						</div>
-
-						<div class="border-2 border-black p-3 rounded bg-neutral-50/70 text-[11px] space-y-1">
-							<div class="flex justify-between border-b pb-1">
-								<span class="font-bold text-neutral-600">Nomor PO:</span>
-								<span class="font-mono font-black">#{previewPoData.header.orderId}</span>
-							</div>
-							<div class="flex justify-between border-b pb-1">
-								<span class="font-bold text-neutral-600">Tanggal PO:</span>
-								<span class="font-mono">{previewPoData.header.orderDate}</span>
-							</div>
-							<div class="flex justify-between border-b pb-1">
-								<span class="font-bold text-neutral-600">Jatuh Tempo:</span>
-								<span class="font-mono">{previewPoData.header.dueDate || '-'}</span>
-							</div>
-							<div class="flex justify-between border-b pb-1">
-								<span class="font-bold text-neutral-600">Tipe Dokumen:</span>
-								<span class="font-mono font-bold">{previewPoData.header.tipeDok}</span>
-							</div>
-							<div class="pt-1 text-[10.5px]">
-								<span class="font-bold text-neutral-600 block">Tujuan Pengiriman:</span>
-								<span class="font-semibold text-neutral-800 leading-tight block">
-									{previewPoData.companyInfo?.deliveryAddress}
-								</span>
-							</div>
-						</div>
-					</div>
-
-					<!-- 3. Tabel Items -->
-					<div class="overflow-x-auto border-2 border-black rounded">
-						<table class="w-full border-collapse text-xs">
-							<thead>
-								<tr class="bg-neutral-100 border-b-2 border-black font-mono uppercase text-[10.5px]">
-									<th class="p-2 border-r border-black text-center w-8">No</th>
-									<th class="p-2 border-r border-black text-left w-28">Kode Barang</th>
-									<th class="p-2 border-r border-black text-left">Nama Barang & Spesifikasi</th>
-									<th class="p-2 border-r border-black text-right w-20">Qty</th>
-									<th class="p-2 border-r border-black text-center w-16">Satuan</th>
-									<th class="p-2 border-r border-black text-right w-24">Harga</th>
-									<th class="p-2 text-right w-28">Total</th>
-								</tr>
-							</thead>
-							<tbody class="divide-y divide-neutral-200">
-								{#each previewPoData.items as item, index}
-									<tr>
-										<td class="p-2 border-r border-black text-center font-mono font-bold text-neutral-500">{index + 1}</td>
-										<td class="p-2 border-r border-black font-mono font-black">{item.itemId}</td>
-										<td class="p-2 border-r border-black font-semibold text-neutral-900">{item.itemName}</td>
-										<td class="p-2 border-r border-black text-right font-mono font-bold">{item.kgs.toLocaleString('id-ID')}</td>
-										<td class="p-2 border-r border-black text-center font-mono">{item.satuan}</td>
-										<td class="p-2 border-r border-black text-right font-mono">{formatRupiah(item.price)}</td>
-										<td class="p-2 text-right font-mono font-black">{formatRupiah(item.total)}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-
-					<!-- 4. Rincian Total & Terbilang -->
-					<div class="grid grid-cols-2 gap-4 text-xs">
-						<div class="border-2 border-black p-3 rounded bg-neutral-50">
-							<span class="text-[10px] font-mono font-black uppercase text-neutral-500 block mb-1">TERBILANG:</span>
-							<p class="font-display font-black text-xs capitalize leading-tight">
-								# {previewPoData.header.terbilang} #
-							</p>
-						</div>
-
-						<div class="border-2 border-black p-3 rounded bg-neutral-50 space-y-1 font-mono text-xs">
-							<div class="flex justify-between">
-								<span class="font-bold text-neutral-600">Subtotal (DPP):</span>
-								<span class="font-bold">{formatRupiah(previewPoData.header.dpp)}</span>
-							</div>
-							<div class="flex justify-between">
-								<span class="font-bold text-neutral-600">PPN ({previewPoData.header.tax}%):</span>
-								<span class="font-bold">{formatRupiah(previewPoData.header.taxAmount)}</span>
-							</div>
-							<div class="border-t-2 border-black pt-1 flex justify-between font-black text-sm">
-								<span>Grand Total:</span>
-								<span class="text-primary">{formatRupiah(previewPoData.header.total)}</span>
-							</div>
-						</div>
-					</div>
-
-					<!-- 5. Tanda Tangan 3 Kolom -->
-					<div class="grid grid-cols-3 gap-3 text-center text-xs pt-4 border-t-2 border-black">
-						<div>
-							<span class="font-bold text-[10px] text-neutral-500 uppercase">Dibuat Oleh:</span>
-							<div class="font-black text-xs mt-0.5">PURCHASING</div>
-							<div class="mt-8 font-mono font-bold">( __________________ )</div>
-						</div>
-						<div>
-							<span class="font-bold text-[10px] text-neutral-500 uppercase">Disetujui Oleh:</span>
-							<div class="font-black text-xs mt-0.5">DIREKTUR / MANAJER</div>
-							<div class="mt-8 font-mono font-bold">( __________________ )</div>
-						</div>
-						<div>
-							<span class="font-bold text-[10px] text-neutral-500 uppercase">Pemasok / Supplier:</span>
-							<div class="font-black text-xs mt-0.5">{previewPoData.header.supplierName.slice(0, 20)}</div>
-							<div class="mt-8 font-mono font-bold">( __________________ )</div>
-						</div>
+					<div class="bg-white border border-neutral-300 shadow-xs p-6 sm:p-8 max-w-[210mm] mx-auto">
+						<PurchaseOrderDocument header={previewPoData.header} items={previewPoData.items} />
 					</div>
 				{/if}
 			</div>
@@ -1411,6 +1297,9 @@
 						<div>
 							<span class="font-mono font-black text-xs text-primary">{g.itemId}</span>
 							<p class="font-semibold text-xs text-foreground mt-0.5">{g.itemName}</p>
+							{#if g.itemName2 && g.itemName2 !== g.itemName}
+								<p class="text-[11px] text-muted-foreground mt-0.5">{g.itemName2}</p>
+							{/if}
 						</div>
 						<span class="px-2 py-0.5 rounded border border-black bg-white text-[10px] font-mono font-bold">
 							{g.satuan}

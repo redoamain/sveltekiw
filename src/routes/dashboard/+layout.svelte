@@ -346,7 +346,7 @@
 
 	<!-- Sidebar (Desktop Sticky, Mobile Slide-over Drawer) -->
 	<aside
-		class="fixed inset-y-0 left-0 z-50 flex flex-col border-r-[3px] border-border bg-sidebar transition-all duration-200
+		class="print:hidden fixed inset-y-0 left-0 z-50 flex flex-col border-r-[3px] border-border bg-sidebar transition-all duration-200
 			md:sticky md:top-0 md:h-screen md:shrink-0
 			{mobileSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full md:translate-x-0'}
 			{sidebarOpen ? 'md:w-64' : 'md:w-16'}"
@@ -638,10 +638,10 @@
 	</aside>
 
 	<!-- Main Inset -->
-	<div class="flex flex-1 flex-col min-w-0">
+	<div class="flex flex-1 flex-col min-w-0 print:p-0 print:m-0">
 		<!-- Header -->
 		<header
-			class="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b-[3px] border-border bg-card px-4 brutal-shadow-sm md:px-6"
+			class="print:hidden sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b-[3px] border-border bg-card px-4 brutal-shadow-sm md:px-6"
 		>
 			<!-- Mobile hamburger -->
 			<button
@@ -708,13 +708,13 @@
 		</header>
 
 		<!-- Main Content -->
-		<main class="flex flex-1 flex-col p-4 md:p-6">
+		<main class="flex flex-1 flex-col p-4 md:p-6 print:p-0 print:m-0">
 			{@render children()}
 		</main>
 
 		<!-- Footer -->
 		<footer
-			class="mt-auto border-t-[3px] border-border bg-card px-4 py-3 text-center brutal-shadow-sm md:px-6"
+			class="print:hidden mt-auto border-t-[3px] border-border bg-card px-4 py-3 text-center brutal-shadow-sm md:px-6"
 		>
 			<p class="font-mono text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground">
 				KIW Monitoring Inventori — <span class="text-foreground">Neo-Brutal v2</span> • Built with SvelteKit

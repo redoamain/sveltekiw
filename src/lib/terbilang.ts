@@ -1,9 +1,10 @@
 /**
  * Konversi angka ke kalimat Terbilang dalam Bahasa Indonesia
  */
-export function terbilang(angka: number): string {
+export function terbilang(angka: number, curr: string = 'IDR'): string {
 	const bil = Math.floor(Math.abs(angka));
-	if (bil === 0) return 'Nol Rupiah';
+	const curName = getCurrencyName(curr);
+	if (bil === 0) return `Nol ${curName}`;
 
 	const satuan = [
 		'',
@@ -34,5 +35,30 @@ export function terbilang(angka: number): string {
 		return `${toWords(Math.floor(n / 1000000000000))} Triliun ${toWords(n % 1000000000000)}`.trim();
 	}
 
-	return `${toWords(bil)} Rupiah`;
+	return `${toWords(bil)} ${curName}`.trim();
+}
+
+function getCurrencyName(curr: string): string {
+	const c = (curr || 'IDR').toUpperCase().trim();
+	switch (c) {
+		case 'USD':
+			return 'US Dollar';
+		case 'EUR':
+			return 'Euro';
+		case 'SGD':
+			return 'Singapore Dollar';
+		case 'JPY':
+			return 'Yen';
+		case 'CNY':
+		case 'RMB':
+			return 'Yuan';
+		case 'AUD':
+			return 'Australian Dollar';
+		case 'GBP':
+			return 'Poundsterling';
+		case 'IDR':
+		case 'RP':
+		default:
+			return 'Rupiah';
+	}
 }
