@@ -56,7 +56,8 @@ export const MENU_NAME_MAP: Record<string, string> = {
 	'/dashboard/jurnal': 'Jurnal Transaksi (General Journal)',
 	'/dashboard/log': 'Log Transaksi ERP',
 	'/dashboard/log-akses': 'Log Akses User',
-	'/dashboard/setting-lockform': 'Pengaturan Kunci Form (taLockform)'
+	'/dashboard/setting-lockform': 'Pengaturan Kunci Form (taLockform)',
+	'/dashboard/laporan-rpform': 'Laporan Program Form (taRpForm)'
 };
 
 /**
@@ -242,7 +243,8 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
 	// Sistem & Audit
 	'/dashboard/log-akses': ['IT'],
 	'/dashboard/log': ['IT', 'ACC', 'BC', 'KONSULTAN'],
-	'/dashboard/setting-lockform': ['IT', 'ACC', 'KONSULTAN', 'PPIC', 'PIC']
+	'/dashboard/setting-lockform': ['IT', 'ACC', 'KONSULTAN', 'PPIC', 'PIC'],
+	'/dashboard/laporan-rpform': ['IT', 'ACC', 'WH', 'PCS', 'MAR', 'EXP', 'PIC', 'PPIC', 'KONSULTAN']
 };
 
 /**

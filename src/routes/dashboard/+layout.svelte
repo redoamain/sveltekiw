@@ -38,7 +38,8 @@
 		Users,
 		UserCog,
 		Workflow,
-		Lock
+		Lock,
+		AppWindow
 	} from '@lucide/svelte';
 	import { Toaster, NotificationCenter } from '$lib/components';
 	import { toast } from '$lib/toast.svelte';
@@ -154,6 +155,7 @@
 			label: 'Sistem & Audit',
 			items: [
 				{ href: '/dashboard/setting-lockform', label: 'Kunci Form (Lock)', icon: Lock },
+				{ href: '/dashboard/laporan-rpform', label: 'Program Form (taRpForm)', icon: AppWindow },
 				{ href: '/dashboard/log-akses', label: 'Log Akses User', icon: UserCheck },
 				{ href: '/dashboard/log', label: 'Log Transaksi ERP', icon: History }
 			]
