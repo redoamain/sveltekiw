@@ -131,6 +131,7 @@
 				{ href: '/dashboard/master-bom', label: 'Master BOM', icon: Workflow },
 				{ href: '/dashboard/master-supplier', label: 'Master Supplier', icon: Building2 },
 				{ href: '/dashboard/master-customer', label: 'Master Customer', icon: Users },
+				{ href: '/dashboard/master-ekspedisi', label: 'Master Ekspedisi', icon: Truck },
 				{ href: '/dashboard/master-user', label: 'Master User', icon: UserCog }
 			]
 		},
