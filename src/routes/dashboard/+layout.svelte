@@ -109,8 +109,7 @@
 				{ href: '/dashboard/pemasukan-gudang', label: 'Pemasukan Gudang', icon: Truck },
 				{ href: '/dashboard/retur-produksi', label: 'Retur Produksi', icon: RotateCcw },
 				{ href: '/dashboard/mutasi-gudang', label: 'Mutasi Gudang', icon: ArrowLeftRight },
-				{ href: '/dashboard/kartu-stock', label: 'Kartu Stock', icon: Layers },
-				{ href: '/dashboard/mutasi-departemen', label: 'kiw-sheet', icon: FileSpreadsheet }
+				{ href: '/dashboard/kartu-stock', label: 'Kartu Stock', icon: Layers }
 			]
 		},
 		{

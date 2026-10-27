@@ -44,7 +44,6 @@ export const MENU_NAME_MAP: Record<string, string> = {
 	'/dashboard/pemasukan-gudang': 'Gudang - Pemasukan Gudang',
 	'/dashboard/kartu-stock': 'Kartu Stock',
 	'/dashboard/kartu-stock-pembelian': 'Kartu Stock Pembelian',
-	'/dashboard/mutasi-departemen': 'Mutasi Antar Departemen (kiw-sheet)',
 	'/dashboard/buku-besar': 'Laporan Buku Besar (GL)',
 	'/dashboard/kartu-hutang': 'Laporan Kartu Hutang (AP)',
 	'/dashboard/kartu-piutang': 'Laporan Kartu Piutang (AR)',
@@ -198,20 +197,6 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
 	],
 	'/dashboard/kartu-stock': ['*'],
 	'/dashboard/kartu-stock-pembelian': ['*'],
-	'/dashboard/mutasi-departemen': [
-		'IT',
-		'WH',
-		'AS',
-		'IN',
-		'PL',
-		'SP',
-		'SPR',
-		'MO',
-		'PRODUKSI',
-		'PIC',
-		'PPIC',
-		'KONSULTAN'
-	],
 
 	// Pembelian & Master
 	'/dashboard/input-po': ['IT', 'PCS', 'ACC', 'WH', 'PIC', 'PPIC', 'DIRECTOR', 'KONSULTAN'],
