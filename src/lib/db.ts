@@ -44,6 +44,7 @@ export const getConfig = (): sql.config => ({
     trustServerCertificate: true,
     connectTimeout: 30000,
     requestTimeout: 60000,
+    appName: process.env.DB_APP_NAME || "kiwkiw",
   },
 });
 
@@ -66,6 +67,7 @@ export const getLoginConfig = (): sql.config => ({
     trustServerCertificate: true,
     connectTimeout: 30000,
     requestTimeout: 30000,
+    appName: process.env.DB_APP_NAME || "kiwkiw",
   },
 });
 
@@ -86,6 +88,7 @@ export const getBackupConfig = (): sql.config => ({
     trustServerCertificate: true,
     connectTimeout: 30000,
     requestTimeout: 60000,
+    appName: process.env.DB_APP_NAME || "kiwkiw",
   },
 });
 
@@ -105,6 +108,7 @@ export const getBackupLoginConfig = (): sql.config => ({
     trustServerCertificate: true,
     connectTimeout: 30000,
     requestTimeout: 30000,
+    appName: process.env.DB_APP_NAME || "kiwkiw",
   },
 });
 
