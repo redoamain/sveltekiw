@@ -39,7 +39,8 @@
 		UserCog,
 		Workflow,
 		Lock,
-		AppWindow
+		AppWindow,
+		FolderTree
 	} from '@lucide/svelte';
 	import { Toaster, NotificationCenter } from '$lib/components';
 	import { toast } from '$lib/toast.svelte';
@@ -132,6 +133,7 @@
 				{ href: '/dashboard/master-supplier', label: 'Master Supplier', icon: Building2 },
 				{ href: '/dashboard/master-customer', label: 'Master Customer', icon: Users },
 				{ href: '/dashboard/master-ekspedisi', label: 'Master Ekspedisi', icon: Truck },
+				{ href: '/dashboard/master-coa', label: 'Bagan Akun (COA)', icon: FolderTree },
 				{ href: '/dashboard/master-user', label: 'Master User', icon: UserCog }
 			]
 		},
@@ -139,6 +141,7 @@
 			key: 'finance',
 			label: 'Finance & Keuangan',
 			items: [
+				{ href: '/dashboard/master-coa', label: 'Bagan Akun (COA)', icon: FolderTree },
 				{ href: '/dashboard/jurnal', label: 'Jurnal Transaksi', icon: FileText },
 				{ href: '/dashboard/buku-besar', label: 'Buku Besar (GL)', icon: BookOpen },
 				{ href: '/dashboard/trial-balance', label: 'Neraca Saldo', icon: Calculator },

@@ -35,6 +35,7 @@ export const MENU_NAME_MAP: Record<string, string> = {
 	'/dashboard/master-supplier': 'Master Data Supplier',
 	'/dashboard/master-customer': 'Master Data Customer',
 	'/dashboard/master-ekspedisi': 'Master Data Ekspedisi',
+	'/dashboard/master-coa': 'Bagan Akun / COA (taGLAcc)',
 	'/dashboard/master-user': 'Master Data Pengguna (User)',
 	'/dashboard/master-bom': 'Master Data Bill of Materials (BOM)',
 	'/dashboard/lbm': 'Gudang - LBM',
@@ -225,6 +226,7 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
 	'/dashboard/master-supplier': ['IT', 'PCS', 'ACC', 'WH', 'PIC', 'PPIC', 'KONSULTAN'],
 	'/dashboard/master-customer': ['IT', 'MAR', 'EXP', 'ACC', 'WH', 'PIC', 'PPIC', 'KONSULTAN'],
 	'/dashboard/master-ekspedisi': ['IT', 'PCS', 'ACC', 'WH', 'MAR', 'EXP', 'PIC', 'PPIC', 'KONSULTAN'],
+	'/dashboard/master-coa': ['IT', 'ACC', 'KONSULTAN'],
 	'/dashboard/master-user': ['IT'],
 	'/dashboard/master-bom': ['IT', 'PIC', 'PPIC', 'RND', 'ACC', 'WH', 'KONSULTAN'],
 
